@@ -227,6 +227,26 @@ scribe init \
   --yes
 ```
 
+### Register the KB with qmd
+
+scribe reindexes qmd but does not create the collection. Register the KB once, named to match `kb_name` (the agent handshake queries that collection):
+
+```sh
+qmd collection add ~/my-kb --name my-kb
+```
+
+Then keep scribe's scratch out of search. `output/` holds drop-file staging and absorb chunks, often tens of thousands of near-duplicates of real articles. qmd only takes ignore patterns from its config, so add an `ignore` list under the collection in `~/.config/qmd/index.yml` and run `qmd update`:
+
+```yaml
+collections:
+  my-kb:
+    path: /Users/you/my-kb
+    pattern: "**/*.md"
+    ignore: ["output/**"]
+```
+
+`scribe doctor` warns when no collection covers the KB, when `output/` is indexed, and when the index trails the newest markdown commit by more than two days.
+
 ---
 
 ## Cron
@@ -247,7 +267,7 @@ The agents are **KB-agnostic**: each one runs `scribe each`, which iterates ever
 
 #### What PATH scheduled jobs see
 
-Each agent runs `/bin/zsh -lc`: a login shell, not an interactive one. It starts from launchd's `/usr/bin:/bin:/usr/sbin:/sbin`, adds what `/etc/paths`, `/etc/paths.d` and `~/.zprofile` add, and never reads `~/.zshrc`. Anything your `~/.zshrc` or a version manager puts on PATH is invisible to cron. `scribe doctor` resolves each dependency against that PATH, not the one in your terminal, and flags anything only your terminal can reach.
+Each agent runs `/bin/zsh -lc`: a login shell, not an interactive one. It starts from launchd's `/usr/bin:/bin:/usr/sbin:/sbin`, adds what `/etc/paths`, `/etc/paths.d` and `~/.zprofile` add, and never reads `~/.zshrc`. Anything your `~/.zshrc` or a version manager puts on PATH is invisible to cron. To add a directory, put it in `~/.zprofile` and spell it with `$HOME`: zsh leaves `~` unexpanded inside double quotes, so `export PATH="$PATH:~/.local/bin"` adds a directory literally named `~` (doctor flags it). `scribe doctor` resolves each dependency against that PATH, not the one in your terminal, and flags anything only your terminal can reach.
 
 qmd gets special handling because it is usually an npm or bun global under a version manager. scribe looks for it on PATH, then under nvm, fnm, volta, bun, asdf and mise, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, and makes node or bun resolvable for its launcher. `scribe doctor` runs `qmd --version` under cron's environment to prove it works. If your install lives somewhere else, set an absolute path in `scribe.local.yaml`:
 

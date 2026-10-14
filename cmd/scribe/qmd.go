@@ -1,12 +1,16 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // qmd is distributed as an npm package, which puts it wherever the user's
@@ -327,3 +331,102 @@ func qmdRuntimeDirs(home, pathList string) []string {
 	}
 	return dirs
 }
+
+// qmdCollection is the qmd collection that indexes a KB, as reported by
+// `qmd collection list` / `collection show`.
+type qmdCollection struct {
+	Name    string
+	Files   string // as printed, e.g. "38924"
+	Updated string // as printed, e.g. "17d ago"
+}
+
+// qmdCollectionFor finds the collection whose Path is root. qmd names a
+// collection after its folder by default, so that name is tried first
+// (one `show` call). A collection added with --name (`enaia` for a folder
+// called enaia-kb) is not, so every other listed collection is then
+// checked by Path. Match is by path, never by name alone: a same-named
+// collection at a different folder must not be reported as this KB's.
+// ok is false when qmd cannot be queried or no collection covers root.
+func qmdCollectionFor(root string) (qmdCollection, bool) {
+	list, err := runQMD(root, "collection", "list")
+	if err != nil {
+		return qmdCollection{}, false
+	}
+	names := qmdCollectionNames(list)
+	base := filepath.Base(root)
+	if i := slices.Index(names, base); i > 0 {
+		names = append([]string{base}, slices.Delete(names, i, i+1)...)
+	}
+	for _, name := range names {
+		show, err := runQMD(root, "collection", "show", name)
+		if err != nil {
+			continue
+		}
+		if p := qmdField(show, "Path:"); p != "" && samePath(p, root) {
+			files, updated := qmdCollectionFilesUpdated(list, name)
+			return qmdCollection{Name: name, Files: files, Updated: updated}, true
+		}
+	}
+	return qmdCollection{}, false
+}
+
+// qmdCollectionNames lists the collection names in `qmd collection list`
+// output, whose blocks are headed "<name> (qmd://<name>/)".
+func qmdCollectionNames(list string) []string {
+	var names []string
+	for line := range strings.SplitSeq(list, "\n") {
+		if name, _, ok := strings.Cut(strings.TrimSpace(line), " (qmd://"); ok && name != "" {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+// parseQMDAge turns qmd's "Updated:" value ("45s ago", "3m ago", "2h ago",
+// "17d ago" — formatTimeAgo in qmd's CLI) into a duration.
+func parseQMDAge(s string) (time.Duration, bool) {
+	s, ok := strings.CutSuffix(strings.TrimSpace(s), " ago")
+	if !ok || len(s) < 2 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(s[:len(s)-1])
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	unit := map[byte]time.Duration{'s': time.Second, 'm': time.Minute, 'h': time.Hour, 'd': 24 * time.Hour}[s[len(s)-1]]
+	if unit == 0 {
+		return 0, false
+	}
+	return time.Duration(n) * unit, true
+}
+
+// errQMDNoCollection means `qmd update` ran cleanly but no collection
+// covers the KB, so nothing in it was (re)indexed.
+var errQMDNoCollection = errors.New("no qmd collection covers this KB, so the reindex indexed nothing — register one: qmd collection add <kb> --name <name>")
+
+// qmdUpdateCoveredRoot reports whether `qmd update` output shows a pass
+// over root. qmd prints "Collection: <path> (<glob>)" for every collection
+// it updates, and "No collections found" when it has none. known is false
+// when the output has neither (an older or unfamiliar qmd), so the caller
+// does not judge output it cannot read.
+func qmdUpdateCoveredRoot(out, root string) (covered, known bool) {
+	if strings.Contains(out, "No collections found") {
+		return false, true
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(stripANSI(line)), "Collection: ")
+		if !ok {
+			continue
+		}
+		known = true
+		if i := strings.LastIndex(rest, " ("); i > 0 && samePath(rest[:i], root) {
+			return true, true
+		}
+	}
+	return false, known
+}
+
+// ansiRE matches the SGR color sequences qmd writes even to a pipe.
+var ansiRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string { return ansiRE.ReplaceAllString(s, "") }

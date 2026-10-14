@@ -487,6 +487,15 @@ func reindexQMD(root, label string) error {
 			errs = append(errs, fmt.Errorf("qmd %s: %w: %s", step, err, lastLine(out)))
 			continue
 		}
+		// A clean exit is not proof of a reindex: `qmd update` exits 0
+		// when no collection covers the KB, which made a KB that was
+		// never registered look exactly like a healthy one. Its output
+		// names every collection it touched, so check this KB was one.
+		if step == "update" {
+			if covered, known := qmdUpdateCoveredRoot(out, root); known && !covered {
+				errs = append(errs, errQMDNoCollection)
+			}
+		}
 		if out != "" {
 			logMsg(label, "%s", lastLine(out))
 		}

@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -90,6 +91,7 @@ func (c *DoctorCmd) Run() error {
 			all = append(all, checkState(root, cfg)...)
 		case "freshness":
 			all = append(all, checkFreshness(root, time.Now())...)
+			all = append(all, checkQMDIndex(root, time.Now())...)
 			all = append(all, checkProviderMining(cfg, time.Now())...)
 		case "errors":
 			all = append(all, checkRecentErrors(root, time.Now(), c.ErrorWindow)...)
@@ -251,6 +253,28 @@ func checkQMDDep(d depSpec, explicit, cronPath string, cronKnown bool) check {
 	}
 }
 
+// checkLiteralTildePATH flags PATH entries that start with a literal "~".
+// `export PATH="$PATH:~/.local/bin"` looks right, but zsh does not expand
+// a tilde inside double quotes, and exec never expands one, so the entry
+// names a directory called "~" that does not exist. Everything the user
+// meant to add stays invisible to cron, and nothing says why.
+func checkLiteralTildePATH(pathList string) (check, bool) {
+	var bad []string
+	for entry := range strings.SplitSeq(pathList, string(os.PathListSeparator)) {
+		if strings.HasPrefix(entry, "~") {
+			bad = append(bad, entry)
+		}
+	}
+	if len(bad) == 0 {
+		return check{}, false
+	}
+	return check{
+		Section: "deps", Name: "cron PATH", Status: statusWarn,
+		Detail: "cron's PATH has an unexpanded ~ entry (" + strings.Join(bad, ", ") + ") — it matches no directory, so nothing in it is reachable",
+		Fix:    `in ~/.zprofile write $HOME instead of ~ inside double quotes, e.g. export PATH="$PATH:$HOME/.local/bin"`,
+	}, true
+}
+
 // reachableFromCron reports whether binPath's directory is on cronPath.
 func reachableFromCron(binPath, cronPath string) bool {
 	dir := filepath.Dir(binPath)
@@ -265,6 +289,11 @@ func reachableFromCron(binPath, cronPath string) bool {
 func checkDeps(cfg *ScribeConfig) []check {
 	var out []check
 	cronPath, cronKnown := cronPATH()
+	if cronKnown {
+		if c, bad := checkLiteralTildePATH(cronPath); bad {
+			out = append(out, c)
+		}
+	}
 	for _, d := range scribeDeps {
 		// qmd is resolved by scribe itself (see qmd.go: probe the node
 		// version managers, then put the binary's directory on the
@@ -1744,6 +1773,88 @@ func checkFreshness(root string, now time.Time) []check {
 		out = append(out, ck)
 	}
 	return out
+}
+
+// qmdIndexMaxLag is how far the qmd index may trail the newest committed
+// markdown before doctor warns. Sync reindexes whenever it produces
+// something and commit whenever it commits wiki content, so on a working
+// install the lag is hours at most; two days means reindexes are failing
+// or not running.
+const qmdIndexMaxLag = 48 * time.Hour
+
+// checkQMDIndex judges the qmd index by its outcome rather than its
+// inputs. The deps check proves qmd can run; this one proves it has been
+// running for THIS KB. A 17-day-stale index went unnoticed precisely
+// because every input check looked fine. Three failure shapes:
+//
+//   - no collection covers the KB: search cannot see it, and every
+//     reindex is a clean-exit no-op;
+//   - the index trails the KB's newest markdown commit by more than
+//     qmdIndexMaxLag;
+//   - output/ is indexed: scribe's gitignored scratch (drop staging,
+//     absorb chunks) is tens of thousands of near-duplicates of real
+//     articles, crowding search results.
+//
+// Read-only qmd calls (collection list/show, ls); none touch the index
+// for writing. Silent when qmd cannot be queried — deps already says why.
+func checkQMDIndex(root string, now time.Time) []check {
+	if _, err := runQMD(root, "collection", "list"); err != nil {
+		return nil
+	}
+	const name = "qmd index"
+	col, ok := qmdCollectionFor(root)
+	if !ok {
+		return []check{{
+			Section: "freshness", Name: name, Status: statusWarn,
+			Detail: "no qmd collection covers this KB — search cannot see it and every reindex indexes nothing",
+			Fix:    "qmd collection add " + shellQuote(root) + " --name " + shellQuote(filepath.Base(root)) + `, then add ignore: ["output/**"] under it in ~/.config/qmd/index.yml`,
+		}}
+	}
+	var out []check
+	detail := col.Name
+	if col.Files != "" {
+		detail += " — " + col.Files + " files"
+	}
+	status, fix := statusOK, ""
+	if age, ok := parseQMDAge(col.Updated); ok {
+		detail += ", updated " + col.Updated
+		if last, ok := lastMarkdownCommit(root); ok {
+			if lag := last.Sub(now.Add(-age)); lag > qmdIndexMaxLag {
+				status = statusWarn
+				detail += fmt.Sprintf(", %s behind the newest markdown commit", shortDuration(lag))
+				fix = "scribe sync --reindex; if it recurs, scheduled reindexes are failing — see `scribe doctor --section deps` and output/runs"
+			}
+		}
+	}
+	out = append(out, check{Section: "freshness", Name: name, Status: status, Detail: detail, Fix: fix})
+
+	if ls, err := runQMD(root, "ls", col.Name+"/output"); err == nil {
+		prefix := "qmd://" + col.Name + "/output/"
+		if n := strings.Count(ls, prefix); n > 0 {
+			out = append(out, check{
+				Section: "freshness", Name: "qmd scope", Status: statusWarn,
+				// "at least": qmd exits before a large stdout pipe drains, so
+				// a big listing arrives truncated. It only ever undercounts.
+				Detail: fmt.Sprintf("output/ is indexed (at least %d files) — scribe's scratch (drop staging, absorb chunks) duplicates real articles in search", n),
+				Fix:    `add ignore: ["output/**"] under ` + col.Name + " in ~/.config/qmd/index.yml, then qmd update",
+			})
+		}
+	}
+	return out
+}
+
+// lastMarkdownCommit is the commit time of the newest commit touching a
+// markdown file in root.
+func lastMarkdownCommit(root string) (time.Time, bool) {
+	out, err := runCmdErr(root, "git", "log", "-1", "--format=%ct", "--", "*.md")
+	if err != nil {
+		return time.Time{}, false
+	}
+	secs, err := strconv.ParseInt(strings.TrimSpace(out), 10, 64)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return time.Unix(secs, 0), true
 }
 
 // Provider-staleness thresholds. A provider is only judged when it has

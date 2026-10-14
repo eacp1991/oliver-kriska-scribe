@@ -136,7 +136,7 @@ func renderStatus(w io.Writer, root string) error {
 	if detail, ok := qmdCollectionStatus(root); ok {
 		fmt.Fprintf(w, "  qmd collection:   %s\n", detail)
 	} else {
-		fmt.Fprintln(w, "  qmd collection:   not indexed yet — run `scribe sync` or `qmd update`")
+		fmt.Fprintln(w, "  qmd collection:   none covers this KB — register one: qmd collection add <kb> --name <name>")
 	}
 
 	// --- agent-skill pointer (issue: humans don't know an agent can drive this) ---
@@ -360,27 +360,19 @@ func defaultStr(s, def string) string {
 // file count and freshness — or ("", false) when no collection maps to
 // this KB (so status prints "not indexed yet"). The old qmdIndexSize
 // reported the GLOBAL qmd store size, which on a multi-collection install
-// is every KB combined (issue #27 item 5). qmd names a collection after
-// the indexed folder's basename; we confirm the match via `collection
-// show`'s Path so a same-named collection at a different folder can't be
-// misreported as this KB's.
+// is every KB combined (issue #27 item 5). The collection is found by
+// path (qmdCollectionFor), so one registered under another name is still
+// this KB's.
 func qmdCollectionStatus(root string) (string, bool) {
-	name := filepath.Base(root)
-	show, err := runQMD(root, "collection", "show", name)
-	if err != nil {
+	col, ok := qmdCollectionFor(root)
+	if !ok {
 		return "", false
 	}
-	if p := qmdField(show, "Path:"); p == "" || !samePath(p, root) {
-		return "", false // no collection for this KB (or it points elsewhere)
-	}
-	detail := name
-	// Files + freshness live in `collection list`, not `collection show`.
-	if list, lerr := runQMD(root, "collection", "list"); lerr == nil {
-		if files, updated := qmdCollectionFilesUpdated(list, name); files != "" {
-			detail += " — " + files + " files"
-			if updated != "" {
-				detail += ", updated " + updated
-			}
+	detail := col.Name
+	if col.Files != "" {
+		detail += " — " + col.Files + " files"
+		if col.Updated != "" {
+			detail += ", updated " + col.Updated
 		}
 	}
 	return detail, true
