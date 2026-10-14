@@ -2,6 +2,57 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.5.7] — 2026-10-14
+
+Scheduled qmd reindexes work again. Under launchd, qmd was usually not on
+PATH, every scheduled `qmd update`/`qmd embed` failed, and nothing recorded
+the failure, so the search index fell behind the KB without any warning.
+Thanks to @louis-byers for #128 and #127.
+
+### Fixed
+
+- **Scheduled runs find qmd.** LaunchAgents run `zsh -lc`, which never
+  reads `~/.zshrc`, so a qmd installed under a node version manager was
+  invisible to cron while working fine in a terminal. scribe now looks for
+  qmd on PATH, then under nvm, fnm, volta, bun, asdf and mise, then in the
+  usual fixed locations. Version directories are ordered numerically
+  (v26 above v9). It also makes the launcher's runtime resolvable: the
+  binary's own directory goes on the child's PATH for `env node`, and for a
+  bun global install (where `~/.bun/bin` holds only the shim) the
+  directory of the node or bun it can find is appended. New `qmd_path`
+  config is the escape hatch for anything else. (#128)
+- **A failed reindex is recorded.** qmd calls used to drop their errors, so
+  sync logged "qmd reindex complete" over a reindex that never happened.
+  Both steps now run and their failures are joined; `sync`, `commit` and
+  `dream` record them as a degraded phase that `scribe doctor` reports.
+  (#128)
+- **`scribe commit` reindexes.** Articles written straight into the KB (by
+  an agent session or by hand) are committed by the hourly `scribe commit`,
+  which never reindexed, so they stayed unsearchable until an unrelated
+  sync happened to produce something. `commit` now reindexes qmd when the
+  commit carried `wiki/` changes, while it still holds the locks. (#128)
+- **`scribe doctor` checks what cron sees.** It derives the PATH a
+  LaunchAgent gets (launchd's default plus the login shell's additions) and
+  checks each dependency against it. For qmd it also runs `qmd --version`
+  under that environment, because a qmd cron can find but not run fails
+  the same way. A dependency only your terminal can reach is flagged, and
+  the fix names the directory to add to `~/.zprofile`. (#128)
+- **An unconfigured iMessage capture is a clean no-op.** With no
+  self-chat handle (including the template's `""` placeholder), `scribe
+  capture` failed on all six of its daily runs, and doctor escalated that to
+  a FAIL. It now logs one line and records an `ok` run. Scripts that relied
+  on the non-zero exit will see 0. (#127)
+
+### Security
+
+- `qmd_path` names a binary scribe executes, so it is trust-locked like the
+  other executable settings, and a team KB ignores it in the shared
+  `scribe.yaml`. Set it per machine in `scribe.local.yaml`. (#128)
+- Go toolchain 1.26.8 → 1.26.9 and `golang.org/x/net` 0.59.0 → 0.60.0 for
+  GO-2026-6617, an HPACK encoder race in `net/http`'s HTTP/2 server.
+  scribe runs no HTTP server, but govulncheck reports the code as reachable,
+  so it is fixed rather than waived.
+
 ## [0.5.6] — 2026-10-06
 
 Dependency refresh. The PDF parser behind tier-0 conversion picks up 16
