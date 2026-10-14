@@ -2,6 +2,39 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [0.5.8] — 2026-10-14
+
+`scribe doctor` now checks the qmd index by its result: whether a collection
+covers the KB, whether it keeps up with the KB, and whether it indexes
+scribe's scratch. 0.5.7 made scheduled reindexes run; these checks report
+when a reindex runs and still leaves search behind.
+
+### Added
+
+- **`doctor` checks the qmd index itself.** A new `qmd index` row in the
+  freshness section warns when no qmd collection covers the KB (search
+  can't see it, and every reindex indexes nothing), and when the index
+  trails the newest markdown commit by more than two days. A `qmd scope` row
+  warns when `output/` is indexed: drop-file staging and absorb chunks there
+  can be tens of thousands of near-duplicates of real articles, crowding
+  search results. The fix is an `ignore: ["output/**"]` entry in
+  `~/.config/qmd/index.yml`.
+- **`doctor` flags a literal `~` on cron's PATH.** zsh does not expand `~`
+  inside double quotes, so `export PATH="$PATH:~/.local/bin"` in
+  `~/.zprofile` adds a directory named `~` that matches nothing.
+- README: how to register a KB with qmd, which no doc covered before.
+
+### Fixed
+
+- **A reindex that covered nothing is no longer a success.** `qmd update`
+  exits 0 when no collection covers the KB. scribe now reads the collections
+  `qmd update` reports and records a failure when this KB isn't among them.
+- **`status` finds a collection registered under another name.** It looked
+  up the collection by the folder's basename, so a KB in `enaia-kb` indexed
+  as `enaia` showed "not indexed yet". Collections are now matched by path.
+  When none matches, status says how to register one instead of suggesting
+  `scribe sync`, which never creates one.
+
 ## [0.5.7] — 2026-10-14
 
 Scheduled qmd reindexes work again. Under launchd, qmd was usually not on
