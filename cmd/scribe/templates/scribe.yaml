@@ -120,6 +120,12 @@ claude_projects_dir: ~/.claude/projects
 # not a failure.
 codex_sessions_dir: ~/.codex/sessions
 ccrider_db: ~/.config/ccrider/sessions.db
+# Absolute path to the qmd binary. Normally unset: scribe finds qmd on PATH
+# or under nvm/fnm/volta/bun/asdf/mise even when cron's PATH lacks it. Set
+# it only if `scribe doctor` says scheduled runs cannot find or run qmd —
+# and put it in scribe.local.yaml, since binary paths are per machine (a
+# team KB ignores it here).
+# qmd_path: /path/to/bin/qmd
 lock_dir: /tmp
 
 # Default model for extraction / absorb claude -p calls

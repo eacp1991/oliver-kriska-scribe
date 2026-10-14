@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -100,7 +102,7 @@ func TestResolveQMDBinaryFallsBackToBareName(t *testing.T) {
 // is not sufficient — node must be resolvable too, and it lives in the
 // same bin directory.
 func TestQMDEnvPrependsBinaryDirToPATH(t *testing.T) {
-	env := qmdEnv("/opt/node/v26/bin/qmd", []string{"HOME=/h", "PATH=/usr/bin:/bin"})
+	env := qmdEnvWith("/opt/node/v26/bin/qmd", []string{"HOME=/h", "PATH=/usr/bin:/bin"}, nil)
 	var path string
 	for _, kv := range env {
 		if strings.HasPrefix(kv, "PATH=") {
@@ -116,7 +118,7 @@ func TestQMDEnvPrependsBinaryDirToPATH(t *testing.T) {
 }
 
 func TestQMDEnvAddsPATHWhenAbsentAndSkipsRelativeBinary(t *testing.T) {
-	env := qmdEnv("/opt/node/bin/qmd", []string{"HOME=/h"})
+	env := qmdEnvWith("/opt/node/bin/qmd", []string{"HOME=/h"}, nil)
 	if len(env) != 2 || !strings.HasPrefix(env[1], "PATH=/opt/node/bin") {
 		t.Errorf("env = %v, want a PATH entry appended", env)
 	}
@@ -124,7 +126,7 @@ func TestQMDEnvAddsPATHWhenAbsentAndSkipsRelativeBinary(t *testing.T) {
 	// Unresolved bare name: filepath.Dir("qmd") is ".", and putting "." on
 	// PATH is a footgun, so the env must be handed back untouched.
 	in := []string{"PATH=/usr/bin"}
-	if got := qmdEnv("qmd", in); got[0] != "PATH=/usr/bin" || len(got) != 1 {
+	if got := qmdEnvWith("qmd", in, nil); got[0] != "PATH=/usr/bin" || len(got) != 1 {
 		t.Errorf("qmdEnv with relative binary mutated env: %v", got)
 	}
 }
@@ -208,5 +210,73 @@ func skipIfSystemQMD(t *testing.T) {
 		if isExecutableFile(p) {
 			t.Skipf("qmd installed at %s on this machine", p)
 		}
+	}
+}
+
+// The bun case: qmd installed with `bun add -g` puts only the package shim
+// in ~/.bun/bin, while bun itself can live under mise. The launcher execs
+// bun, so the shim's own directory is not enough — the runtime's has to be
+// appended too, or every cron reindex dies with `exec: bun: not found`.
+func TestQMDRuntimeDirsFindsBunOutsideTheShimDir(t *testing.T) {
+	home := t.TempDir()
+	writeExec(t, filepath.Join(home, ".bun", "bin", "qmd"))
+	bun := writeExec(t, filepath.Join(home, ".local", "share", "mise", "installs", "bun", "1.4.0", "bin", "bun"))
+	writeExec(t, filepath.Join(home, ".local", "share", "mise", "installs", "bun", "1.1.0", "bin", "bun"))
+
+	cronPath := filepath.Join(home, ".bun", "bin") + string(os.PathListSeparator) + t.TempDir()
+	got := qmdRuntimeDirs(home, cronPath)
+	if !slices.Contains(got, filepath.Dir(bun)) {
+		t.Errorf("qmdRuntimeDirs = %v, want it to include the newest mise bun dir %s", got, filepath.Dir(bun))
+	}
+}
+
+// A runtime the PATH already resolves is never overridden: the probe only
+// fills gaps, it must not swap the user's node for another version.
+func TestQMDRuntimeDirsLeavesResolvableRuntimeAlone(t *testing.T) {
+	home := t.TempDir()
+	onPath := t.TempDir()
+	writeExec(t, filepath.Join(onPath, "node"))
+	writeExec(t, filepath.Join(onPath, "bun"))
+	writeExec(t, filepath.Join(home, ".nvm", "versions", "node", "v26.4.0", "bin", "node"))
+
+	if got := qmdRuntimeDirs(home, onPath); len(got) != 0 {
+		t.Errorf("qmdRuntimeDirs = %v, want none when PATH already has node and bun", got)
+	}
+}
+
+// Probed runtime dirs go AFTER the caller's PATH.
+func TestQMDEnvAppendsRuntimeDirsAfterPATH(t *testing.T) {
+	probe := func(home, _ string) []string {
+		if home != "/h" {
+			t.Errorf("probe got home %q, want the env's HOME", home)
+		}
+		return []string{"/rt/bin"}
+	}
+	env := qmdEnvWith("/q/bin/qmd", []string{"HOME=/h", "PATH=/usr/bin"}, probe)
+	sep := string(os.PathListSeparator)
+	if want := "PATH=/q/bin" + sep + "/usr/bin" + sep + "/rt/bin"; env[1] != want {
+		t.Errorf("env = %v, want %s", env, want)
+	}
+}
+
+// Resolving is not running: a qmd that cron can find but not execute (its
+// runtime is missing from cron's env) must FAIL, not report ok.
+func TestCheckQMDDepFailsWhenQMDCannotRunUnderCron(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	cronDir := t.TempDir()
+	qmd := writeExec(t, filepath.Join(cronDir, "qmd"))
+
+	orig := qmdCronProbe
+	t.Cleanup(func() { qmdCronProbe = orig })
+	qmdCronProbe = func(bin, _ string) error {
+		if bin != qmd {
+			t.Errorf("probe ran %q, want the resolved %q", bin, qmd)
+		}
+		return errors.New("exit status 127: exec: bun: not found")
+	}
+
+	got := checkQMDDep(depSpec{Name: "qmd", Binary: "qmd"}, "", cronDir, true)
+	if got.Status != statusFail || !strings.Contains(got.Detail, "bun: not found") {
+		t.Errorf("check = %+v, want FAIL carrying the runtime error", got)
 	}
 }

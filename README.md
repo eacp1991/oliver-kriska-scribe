@@ -245,6 +245,18 @@ The agents are **KB-agnostic**: each one runs `scribe each`, which iterates ever
 
 **Upgrades update the agents for you.** When a new scribe version runs its first scheduled job, it rewrites any plist the new version changed (a new job, a new schedule) and reloads it. That holds however the binary got there: `brew upgrade`, `make install` or the install script. It never reloads a job that is running at that moment, including itself; those are picked up by the next job that fires. Plists you edited by hand are never touched (`scribe cron install --force` adopts them back). If `scribe cron install` would now resolve a different binary than the one running the job, nothing is rewritten, and the job log says to run `scribe cron install` yourself.
 
+#### What PATH scheduled jobs see
+
+Each agent runs `/bin/zsh -lc`: a login shell, not an interactive one. It starts from launchd's `/usr/bin:/bin:/usr/sbin:/sbin`, adds what `/etc/paths`, `/etc/paths.d` and `~/.zprofile` add, and never reads `~/.zshrc`. Anything your `~/.zshrc` or a version manager puts on PATH is invisible to cron. `scribe doctor` resolves each dependency against that PATH, not the one in your terminal, and flags anything only your terminal can reach.
+
+qmd gets special handling because it is usually an npm or bun global under a version manager. scribe looks for it on PATH, then under nvm, fnm, volta, bun, asdf and mise, then in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, and makes node or bun resolvable for its launcher. `scribe doctor` runs `qmd --version` under cron's environment to prove it works. If your install lives somewhere else, set an absolute path in `scribe.local.yaml`:
+
+```yaml
+qmd_path: /path/to/bin/qmd
+```
+
+`qmd_path` names a binary scribe executes, so it is covered by `scribe config trust`. In a team KB it is ignored in the shared `scribe.yaml` and only honored from `scribe.local.yaml`.
+
 #### Full Disk Access for `scribe capture`
 
 macOS won't let any process read `~/Library/Messages/chat.db` without Full Disk Access. Apple disallows programs from granting themselves FDA, so the toggle itself is unavoidable — but everything else is automated:
@@ -350,6 +362,7 @@ domains:
 claude_projects_dir: ~/.claude/projects
 codex_sessions_dir: ~/.codex/sessions   # optional — Codex CLI rollouts; `sync --discover` walks these alongside Claude
 ccrider_db: ~/.config/ccrider/sessions.db
+# qmd_path: /path/to/bin/qmd   # optional — only if doctor says cron can't find qmd; see "What PATH scheduled jobs see"
 
 default_model: sonnet # claude model used for extraction/dream/absorb
 

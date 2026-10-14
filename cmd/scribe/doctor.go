@@ -153,7 +153,10 @@ var runtimeGOOS = runtime.GOOS
 //
 // Reproducing it is one subprocess: strip the environment the way launchd
 // does and ask the same login shell the plists use what PATH it ends up
-// with.
+// with. PATH is seeded with launchd's default for user agents rather than
+// left unset: with no PATH, zsh falls back to its own compiled-in default
+// (which adds /usr/local/bin and /usr/ucb), so the probe would report
+// directories cron never actually gets.
 func cronPATH() (string, bool) {
 	if runtimeGOOS != "darwin" {
 		// LaunchAgents are the macOS-only cron mechanism; on Linux the
@@ -161,7 +164,7 @@ func cronPATH() (string, bool) {
 		// cron's PATH would be a guess. Stay silent instead.
 		return "", false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	// os.UserHomeDir rather than os.Getenv("HOME"): same value, but it
 	// keeps an environment read from flowing straight into an exec
@@ -170,7 +173,7 @@ func cronPATH() (string, bool) {
 	if hErr != nil {
 		return "", false
 	}
-	cmd := exec.CommandContext(ctx, "env", "-i", "HOME="+home, "/bin/zsh", "-lc", "printf %s \"$PATH\"")
+	cmd := exec.CommandContext(ctx, "env", "-i", "HOME="+home, "PATH="+launchdDefaultPATH, "/bin/zsh", "-lc", "printf %s \"$PATH\"")
 	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
 		return "", false
@@ -178,9 +181,41 @@ func cronPATH() (string, bool) {
 	return string(out), true
 }
 
+// launchdDefaultPATH is what launchd hands a user agent that sets no
+// EnvironmentVariables (`launchctl print gui/<uid>` → default environment).
+const launchdDefaultPATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+
+// qmdCronProbe executes the resolved qmd the way runQMD would from a
+// scheduled run: HOME plus cron's PATH, run through qmdEnv. Finding the
+// file is not the same as being able to run it. qmd's launcher execs node
+// or bun, and a bun global install keeps bun outside ~/.bun/bin, so a
+// qmd that resolves can still die with `exec: bun: not found` on every
+// cron run. `--version` touches no index, so it cannot contend with a
+// running sync for qmd's SQLite WAL. A var so tests can stub it.
+var qmdCronProbe = func(bin, cronPath string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	cmd.Env = qmdEnv(bin, []string{"HOME=" + home, "PATH=" + cronPath})
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if msg := lastLine(strings.TrimSpace(string(out))); msg != "" {
+			return fmt.Errorf("%w: %s", err, msg)
+		}
+		return err
+	}
+	return nil
+}
+
 // checkQMDDep resolves qmd the way a scheduled run would when cron's PATH
 // is known, so an install only the interactive shell can see is reported
-// as the failure it is under launchd rather than as OK.
+// as the failure it is under launchd rather than as OK. When it resolves,
+// it is also executed under cron's environment (qmdCronProbe), because a
+// qmd whose runtime cron cannot find fails just the same.
 func checkQMDDep(d depSpec, explicit, cronPath string, cronKnown bool) check {
 	const localHint = " (or set qmd_path in scribe.local.yaml)"
 	interactive := resolveQMDBinaryWith(explicit)
@@ -193,6 +228,13 @@ func checkQMDDep(d depSpec, explicit, cronPath string, cronKnown bool) check {
 	scheduled := resolveQMDBinaryOnPath(explicit, cronPath)
 	switch {
 	case filepath.IsAbs(scheduled):
+		if err := qmdCronProbe(scheduled, cronPath); err != nil {
+			return check{
+				Section: "deps", Name: d.Name, Status: statusFail,
+				Detail: scheduled + " — found, but fails to run under cron's environment, so every scheduled reindex fails: " + err.Error(),
+				Fix:    "make its runtime (node or bun) reachable: add its directory to PATH in ~/.zprofile (scheduled jobs run `zsh -l`, which reads it), or reinstall qmd with npm under a node on that PATH",
+			}
+		}
 		detail := scheduled
 		if !reachableFromCron(scheduled, cronPath) {
 			detail += " (not on cron PATH — scribe invokes it by absolute path)"
@@ -243,7 +285,7 @@ func checkDeps(cfg *ScribeConfig) []check {
 			out = append(out, check{
 				Section: "deps", Name: d.Name, Status: statusWarn,
 				Detail: path + " — on your PATH but NOT on cron's; scheduled runs cannot execute it",
-				Fix:    "move it somewhere on cron's PATH (e.g. ~/.local/bin) or symlink it there",
+				Fix:    "add " + filepath.Dir(path) + " to PATH in ~/.zprofile — scheduled jobs run `zsh -l`, which reads ~/.zprofile but not ~/.zshrc",
 			})
 		case err == nil:
 			out = append(out, check{Section: "deps", Name: d.Name, Status: statusOK, Detail: path})

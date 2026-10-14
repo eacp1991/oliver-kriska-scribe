@@ -15,19 +15,24 @@ import (
 // ~/.zshrc. A LaunchAgent runs `/bin/zsh -lc`, which is NOT interactive
 // and therefore never sources ~/.zshrc, so `qmd` was simply absent from
 // PATH for every scheduled run: every cron reindex was a silent no-op
-// while `qmd` resolved fine in an interactive shell. `claude` escaped
-// this only because it installs into ~/.local/bin, which path_helper
-// puts on the default PATH.
+// while `qmd` resolved fine in an interactive shell. The login shell's
+// PATH is launchd's /usr/bin:/bin:/usr/sbin:/sbin plus whatever
+// /etc/paths, /etc/paths.d and ~/.zprofile add — typically Homebrew's
+// prefix, and not ~/.local/bin or any version manager.
 //
 // Two things are therefore required to invoke qmd from cron, and an
 // absolute path alone is not enough:
 //
 //  1. locate the binary without relying on PATH (resolveQMDBinary), and
-//  2. put its directory on the child's PATH (runQMD), because qmd is a
-//     `#!/usr/bin/env node` script — without `node` resolvable the exec
-//     fails with `env: node: No such file or directory`. node ships in
-//     the same bin directory under every node version manager, so one
-//     PATH entry satisfies both lookups.
+//  2. make its JS runtime resolvable (runQMD → qmdEnv). The npm shim is a
+//     `#!/usr/bin/env node` script, and the 2.x launcher is a /bin/sh
+//     wrapper that execs `node` or `bun` depending on which package
+//     manager installed it. Under nvm, fnm, volta and asdf node ships in
+//     the same bin directory as the shim, so prepending that directory is
+//     enough. A bun global install is not: ~/.bun/bin holds only the
+//     package shims, and bun itself may live under mise or Homebrew. So
+//     qmdEnv also appends the directory of any runtime it can find that
+//     the PATH does not already resolve.
 //
 // nodeManagerQMDGlobs are the per-user install roots to probe, in
 // preference order. Kept to the managers that actually colocate node and
@@ -174,7 +179,7 @@ func compareVersionPaths(a, b string) int {
 // (".../node/v26.4.0/bin/qmd" -> [26 4 0]).
 func versionNumbers(path string) []int {
 	var best []int
-	for _, seg := range strings.Split(path, string(os.PathSeparator)) {
+	for seg := range strings.SplitSeq(path, string(os.PathSeparator)) {
 		seg = strings.TrimPrefix(seg, "v")
 		parts := strings.Split(seg, ".")
 		nums := make([]int, 0, len(parts))
@@ -215,26 +220,110 @@ func runQMD(root string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// qmdEnv returns env with the binary's directory prepended to PATH. Only
-// applied for an absolute resolution: prepending filepath.Dir("qmd")
-// would put "." on PATH, which is both useless and a footgun.
+// qmdEnv returns env with the binary's directory prepended to PATH, and
+// the directories of any JS runtime (node, bun) that PATH still cannot
+// resolve appended after it. Appended, not prepended, so a runtime the
+// caller's PATH already provides keeps winning.
 func qmdEnv(bin string, env []string) []string {
+	return qmdEnvWith(bin, env, qmdRuntimeDirs)
+}
+
+// qmdEnvWith is qmdEnv with the runtime prober injected, so tests do not
+// depend on which node or bun the machine running them has installed.
+//
+// The bin-dir prepend is only applied for an absolute resolution:
+// prepending filepath.Dir("qmd") would put "." on PATH, which is both
+// useless and a footgun. An unresolved bare name gets the env back
+// untouched — exec will fail with "not found" either way.
+func qmdEnvWith(bin string, env []string, runtimes func(home, pathList string) []string) []string {
 	if !filepath.IsAbs(bin) {
 		return env
 	}
-	dir := filepath.Dir(bin)
-	out := make([]string, 0, len(env))
-	replaced := false
-	for _, kv := range env {
-		if strings.HasPrefix(kv, "PATH=") {
-			out = append(out, "PATH="+dir+string(os.PathListSeparator)+strings.TrimPrefix(kv, "PATH="))
-			replaced = true
-			continue
+	sep := string(os.PathListSeparator)
+	home := os.Getenv("HOME")
+	path := ""
+	pathIdx := -1
+	for i, kv := range env {
+		switch {
+		case strings.HasPrefix(kv, "PATH="):
+			path, pathIdx = strings.TrimPrefix(kv, "PATH="), i
+		case strings.HasPrefix(kv, "HOME="):
+			home = strings.TrimPrefix(kv, "HOME=")
 		}
-		out = append(out, kv)
 	}
-	if !replaced {
-		out = append(out, "PATH="+dir)
+	newPath := filepath.Dir(bin)
+	if path != "" {
+		newPath += sep + path
+	}
+	if runtimes != nil {
+		for _, dir := range runtimes(home, newPath) {
+			newPath += sep + dir
+		}
+	}
+	out := make([]string, 0, len(env)+1)
+	out = append(out, env...)
+	if pathIdx >= 0 {
+		out[pathIdx] = "PATH=" + newPath
+	} else {
+		out = append(out, "PATH="+newPath)
 	}
 	return out
+}
+
+// qmdRuntimes are the interpreters a qmd launcher may exec.
+var qmdRuntimes = []string{"node", "bun"}
+
+// runtimeCandidates lists where a version manager or package manager puts
+// the named runtime, globs first, in the same preference order as
+// nodeManagerQMDGlobs.
+func runtimeCandidates(home, name string) []string {
+	var c []string
+	switch name {
+	case "node":
+		c = append(c,
+			filepath.Join(home, ".nvm", "versions", "node", "*", "bin", "node"),
+			filepath.Join(home, ".local", "share", "fnm", "node-versions", "*", "installation", "bin", "node"),
+			filepath.Join(home, ".volta", "bin", "node"),
+			filepath.Join(home, ".asdf", "installs", "nodejs", "*", "bin", "node"),
+		)
+	case "bun":
+		c = append(c,
+			filepath.Join(home, ".bun", "bin", "bun"),
+			filepath.Join(home, ".asdf", "installs", "bun", "*", "bin", "bun"),
+		)
+	}
+	return append(c,
+		filepath.Join(home, ".local", "share", "mise", "installs", name, "*", "bin", name),
+		"/opt/homebrew/bin/"+name,
+		"/usr/local/bin/"+name,
+	)
+}
+
+// qmdRuntimeDirs returns, for each runtime in qmdRuntimes that pathList
+// cannot resolve, the directory of the first install the probe finds.
+// A runtime the PATH already resolves is left alone, so this only ever
+// fills a gap — it never overrides the user's choice of node.
+func qmdRuntimeDirs(home, pathList string) []string {
+	var dirs []string
+	seen := map[string]bool{}
+	for _, name := range qmdRuntimes {
+		if lookPathIn(name, pathList) != "" {
+			continue
+		}
+		for _, pattern := range runtimeCandidates(home, name) {
+			// An unset HOME turns the per-user candidates relative,
+			// which would resolve against the cwd.
+			if !filepath.IsAbs(pattern) {
+				continue
+			}
+			if p := newestExecutableMatch(pattern); p != "" {
+				if dir := filepath.Dir(p); !seen[dir] {
+					seen[dir] = true
+					dirs = append(dirs, dir)
+				}
+				break
+			}
+		}
+	}
+	return dirs
 }

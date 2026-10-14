@@ -61,6 +61,24 @@ func (c *CaptureCmd) Run() error {
 	}
 	cfg := loadConfig(root)
 
+	selfChatIDs := resolveSelfChatHandles(cfg.Capture)
+	if len(selfChatIDs) == 0 {
+		// Capture is optional: the README documents an empty
+		// self_chat_handles as "capture disabled", and doctor's capture
+		// row already reports it as not set up. Failing hard here made the
+		// capture-imessage LaunchAgent record an error on all 6 of its
+		// daily runs. Recording it as degraded would be no better, since
+		// doctor counts degraded runs toward the same repeated-failure
+		// streak. Disabled is a legitimate state, so this is a clean no-op.
+		//
+		// Checked before the lock and state load so a disabled capture
+		// prints one line, not "capturing since …" followed by a no-op.
+		// Terse on purpose: cron captures stdout. The "here is what to
+		// set" guidance lives on doctor's capture row.
+		logMsg("capture", "no self-chat handle configured — iMessage capture disabled (set capture.self_chat_handles in scribe.yaml or SCRIBE_SELF_CHAT_ID to enable)")
+		return nil
+	}
+
 	if !c.DryRun {
 		lockPath := lockPathFor(cfg.LockDir, "capture-imessage", root)
 		lf, ok, err := acquireLock(lockPath)
@@ -92,22 +110,6 @@ func (c *CaptureCmd) Run() error {
 	}
 
 	logMsg("capture", "capturing since %s", since)
-
-	selfChatIDs := resolveSelfChatHandles(cfg.Capture)
-	if len(selfChatIDs) == 0 {
-		// Capture is optional: the README documents an empty
-		// self_chat_handles as "capture disabled", and doctor's capture
-		// row already reports it as not set up. Failing hard here made the
-		// capture-imessage LaunchAgent record an error on all 6 of its
-		// daily runs. Recording it as degraded would be no better, since
-		// doctor counts degraded runs toward the same repeated-failure
-		// streak. Disabled is a legitimate state, so this is a clean no-op.
-		//
-		// Terse on purpose: cron captures stdout. The "here is what to
-		// set" guidance lives on doctor's capture row.
-		logMsg("capture", "no self-chat handle configured — iMessage capture disabled (set capture.self_chat_handles in scribe.yaml or SCRIBE_SELF_CHAT_ID to enable)")
-		return nil
-	}
 
 	messages, err := readSelfChatMessages(selfChatIDs, since)
 	if err != nil {
