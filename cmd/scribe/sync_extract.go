@@ -391,10 +391,10 @@ func (s *SyncCmd) extractProject(root string, manifest *Manifest, pname string, 
 		}
 		consumedDrops = seen
 	} else {
-		tools := []string{
+		tools := append([]string{
 			"Read", "Write", "Edit", "Glob", "Grep",
-			"Bash(git log:*)", "Bash(git -C:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
-		}
+			"Bash(git log:*)", "Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
+		}, readOnlyGitTools(entry.Path)...)
 		_, err = runClaude(withOpLabel(ctx, "session-extract"), root, prompt, s.Model, tools, 10*time.Minute)
 		if err != nil {
 			return fmt.Errorf("claude extraction: %w", err)

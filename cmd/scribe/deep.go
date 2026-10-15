@@ -204,11 +204,11 @@ func (d *DeepCmd) extractDir(root, projectPath, relDir, domain string, mdFiles [
 		return false, fmt.Errorf("load prompt: %w", err)
 	}
 
-	tools := []string{
+	tools := append([]string{
 		"Read", "Write", "Edit", "Glob", "Grep",
-		"Bash(git log:*)", "Bash(git -C:*)",
+		"Bash(git log:*)",
 		"Bash(ls:*)", "Bash(find:*)", "Bash(wc:*)",
-	}
+	}, readOnlyGitTools(projectPath)...)
 
 	if _, err := runClaude(withOpLabel(ctx, "deep-extract"), root, prompt, d.Model, tools, 600*time.Second); err != nil {
 		if errors.Is(err, ErrRateLimit) {

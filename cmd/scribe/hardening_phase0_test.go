@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Regression tests for the 2026-10-15 security audit, Phase 0: the
@@ -128,5 +130,104 @@ func TestErrorRecordTailsAreRedacted(t *testing.T) {
 	data, _ := os.ReadFile(files[0])
 	if strings.Contains(string(data), "HEX123") || strings.Contains(string(data), "SECRET") {
 		t.Fatalf("token leaked into error record: %s", data)
+	}
+}
+
+// --- Phase 1: claude -p isolation ------------------------------------------
+
+func TestToolBaseNames(t *testing.T) {
+	got := toolBaseNames([]string{"Read", "Bash(git log:*)", "Bash(ls:*)", "Write", "Read"})
+	want := []string{"Read", "Bash", "Write"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	if toolBaseNames(nil) != nil {
+		t.Fatal("no grants must map to no tools")
+	}
+}
+
+func TestReadOnlyGitToolsPinRepoAndVerb(t *testing.T) {
+	tools := readOnlyGitTools("/srv/repo")
+	for _, tl := range tools {
+		if !strings.HasPrefix(tl, "Bash(git -C /srv/repo ") || !strings.HasSuffix(tl, ":*)") {
+			t.Errorf("unexpected grant shape %q", tl)
+		}
+		for _, verb := range []string{"push", "commit", "reset", "checkout"} {
+			if strings.Contains(tl, " "+verb+":") {
+				t.Errorf("mutating verb granted: %q", tl)
+			}
+		}
+	}
+	if strings.Contains(strings.Join(tools, ","), "Bash(git -C:*)") {
+		t.Fatal("the unscoped grant is back")
+	}
+}
+
+func argvLines(t *testing.T, argvFile string) []string {
+	t.Helper()
+	data, err := os.ReadFile(argvFile)
+	if err != nil {
+		t.Fatalf("claude shim was not invoked: %v", err)
+	}
+	return strings.Split(strings.TrimRight(string(data), "\n"), "\n")
+}
+
+func assertIsolationArgs(t *testing.T, argv []string) {
+	t.Helper()
+	joined := "\n" + strings.Join(argv, "\n") + "\n"
+	for _, want := range []string{
+		"\n--setting-sources\n\n", // empty value: no user/project/local settings
+		"\n--strict-mcp-config\n",
+		"\n--disable-slash-commands\n",
+		"\n--settings\n{\"disableAllHooks\":true}\n",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("argv missing %q:\n%s", strings.TrimSpace(want), joined)
+		}
+	}
+	if strings.Contains(joined, `{"hooks":{}}`) {
+		t.Error("the ineffective hooks:{} override is still passed")
+	}
+	// --tools is variadic: the element after its value must be a flag,
+	// never a positional that would be swallowed as another tool name.
+	for i, a := range argv {
+		if a == "--tools" {
+			if i+2 >= len(argv) || !strings.HasPrefix(argv[i+2], "--") {
+				t.Errorf("--tools must be followed by exactly one value and then a flag: %v", argv[i:])
+			}
+		}
+	}
+}
+
+func TestAnthropicGenerate_NoToolsNoHooks(t *testing.T) {
+	root := testKB(t, "")
+	argvFile, _ := installFakeClaude(t)
+	p := &anthropicProvider{model: "haiku", root: root}
+	if _, err := p.Generate(context.Background(), "hi"); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	argv := argvLines(t, argvFile)
+	assertIsolationArgs(t, argv)
+	joined := "\n" + strings.Join(argv, "\n") + "\n"
+	if !strings.Contains(joined, "\n--tools\n\n") {
+		t.Errorf("pure-text path must pass --tools \"\":\n%s", joined)
+	}
+}
+
+func TestRealRunClaude_ToolsMatchGrants(t *testing.T) {
+	root := testKB(t, "")
+	argvFile, _ := installFakeClaude(t)
+	tools := []string{"Read", "Write", "Bash(git log:*)", "Bash(ls:*)"}
+	if _, err := realRunClaude(context.Background(), root, "hi", "haiku", tools, 30*time.Second); err != nil {
+		t.Fatalf("realRunClaude: %v", err)
+	}
+	argv := argvLines(t, argvFile)
+	assertIsolationArgs(t, argv)
+	joined := "\n" + strings.Join(argv, "\n") + "\n"
+	if !strings.Contains(joined, "\n--tools\nRead,Write,Bash\n") {
+		t.Errorf("--tools must list exactly the granted base names:\n%s", joined)
+	}
+	if !strings.Contains(joined, "\n--allowedTools\nRead,Write,Bash(git log:*),Bash(ls:*)\n") {
+		t.Errorf("--allowedTools must keep the patterns:\n%s", joined)
 	}
 }
