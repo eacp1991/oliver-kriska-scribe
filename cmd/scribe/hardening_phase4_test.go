@@ -169,3 +169,76 @@ func TestCopyBounded(t *testing.T) {
 		t.Fatal("oversized body copied without error")
 	}
 }
+
+// --- Phase 4B: symlink escapes through directories ------------------------
+
+func TestValidateActionPathRefusesSymlinkedDir(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "wiki", "inside"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// wiki/sub -> /outside : lexically fine, physically an escape.
+	if err := os.Symlink(outside, filepath.Join(root, "wiki", "sub")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateActionPath(root, "wiki/sub/page.md"); err == nil {
+		t.Fatal("write through a symlinked directory accepted")
+	}
+	if _, err := validateActionPath(root, "wiki/sub/deeper/new/page.md"); err == nil {
+		t.Fatal("write below a symlinked directory accepted")
+	}
+	if _, err := validateActionPath(root, "wiki/inside/page.md"); err != nil {
+		t.Fatalf("plain path refused: %v", err)
+	}
+	if _, err := validateActionPath(root, "wiki/brand/new/dirs/page.md"); err != nil {
+		t.Fatalf("not-yet-existing path refused: %v", err)
+	}
+	// A symlinked FILE whose target is outside.
+	victim := filepath.Join(outside, "victim.md")
+	if err := os.WriteFile(victim, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(root, "wiki", "alias.md")); err != nil {
+		t.Fatal(err)
+	}
+	env := WikiActionEnvelope{Actions: []WikiAction{{Op: "append", Path: "wiki/alias.md", Content: "\npwned\n"}}}
+	res, _ := applyWikiActions(root, env, ApplyOptions{})
+	if got, _ := os.ReadFile(victim); string(got) != "keep" {
+		t.Fatalf("append went through a symlinked file: %q", got)
+	}
+	if len(res.Errors) != 1 {
+		t.Fatalf("expected one refusal, got %v", res.Errors)
+	}
+	// A symlink that stays inside the KB is still allowed.
+	if err := os.Symlink(filepath.Join(root, "wiki", "inside"), filepath.Join(root, "wiki", "local-link")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateActionPath(root, "wiki/local-link/page.md"); err != nil {
+		t.Fatalf("in-KB symlink refused: %v", err)
+	}
+}
+
+func TestRelationsRevertKeepsPathsInsideKB(t *testing.T) {
+	root := testKB(t, "")
+	t.Setenv("SCRIBE_KB", root)
+	outside := filepath.Join(t.TempDir(), "victim.md")
+	if err := os.WriteFile(outside, []byte("---\ntitle: V\nrelated: [\"[[X]]\"]\n---\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "wiki"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rel, _ := filepath.Rel(root, outside)
+	log := `{"source":"` + rel + `","target":"X","to_field":"depends_on","reverse":""}` + "\n"
+	logPath := filepath.Join(root, "wiki", "_relations_migration_test.jsonl")
+	if err := os.WriteFile(logPath, []byte(log), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(outside)
+	_ = (&RelationsMigrateRevertCmd{Log: logPath}).Run()
+	after, _ := os.ReadFile(outside)
+	if !bytes.Equal(before, after) {
+		t.Fatalf("revert edited a file outside the KB")
+	}
+}

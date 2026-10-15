@@ -1059,10 +1059,44 @@ func validateActionPath(root, rel string) (string, error) {
 	top := parts[0]
 	for _, allowed := range wikiDirs {
 		if top == allowed {
+			if symlinkEscapes(root, abs) {
+				return "", fmt.Errorf("path %q resolves outside the KB through a symlink", rel)
+			}
 			return abs, nil
 		}
 	}
 	return "", fmt.Errorf("path %q is outside known wiki dirs (%s): %w", rel, strings.Join(wikiDirs, ", "), errUnknownTopDir)
+}
+
+// symlinkEscapes reports whether abs, with every symlink in its existing
+// prefix resolved, lands outside root. The lexical checks above see
+// "wiki/sub/page.md"; if wiki/sub is a symlink to /etc, the write would
+// not. In a team KB such a link arrives by git pull, so the old "the
+// user placed it" assumption no longer holds. A link that stays inside
+// the KB is fine. Unresolvable prefixes count as escapes (fail closed).
+func symlinkEscapes(root, abs string) bool {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return true
+	}
+	// Longest existing prefix of abs: the file may not exist yet, its
+	// parent may not either (writeFileAtomic MkdirAll's it).
+	p := abs
+	for {
+		if _, err := os.Lstat(p); err == nil {
+			break
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return true
+		}
+		p = parent
+	}
+	realP, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return true
+	}
+	return !pathWithinRoot(realRoot, realP)
 }
 
 // errUnknownTopDir flags the "path outside known wiki dirs" failure
