@@ -433,8 +433,22 @@ func teamKB(root string, cfg *ScribeConfig) bool {
 	if cfg != nil && cfg.Team {
 		return true
 	}
-	rec := loadTrustRecord(root)
-	return rec != nil && rec.Sensitive.Team
+	if rec := loadTrustRecord(root); rec != nil {
+		return rec.Sensitive.Team
+	}
+	// Fresh clone: no trust record yet (ensureConfigTrust runs later in
+	// sync). The repo's own scribe.yaml is the only signal, and a team KB
+	// declares itself there.
+	view, ok := repoSensitiveView(root)
+	return ok && view.Team
+}
+
+// invalidateRepoTrackedCache drops every memoized ls-files answer. Call it
+// after anything that can change the index: a pull may bring in a tracked
+// scribe.local.yaml or scripts/projects.json that an earlier loadConfig in
+// the same process already cached as untracked.
+func invalidateRepoTrackedCache() {
+	repoTrackedCache.Clear()
 }
 
 // repoTrackedCache memoises repoFileTracked per (root, rel) for the

@@ -29,7 +29,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -126,8 +125,8 @@ func requireSecureBaseURL(base string) error {
 func hostedHTTPClient() *http.Client {
 	return &http.Client{
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 0 && req.URL.Host != via[0].URL.Host {
-				return fmt.Errorf("refusing cross-origin redirect to %s", req.URL.Host)
+			if len(via) > 0 && (req.URL.Host != via[0].URL.Host || req.URL.Scheme != via[0].URL.Scheme) {
+				return fmt.Errorf("refusing cross-origin redirect to %s://%s", req.URL.Scheme, req.URL.Host)
 			}
 			if len(via) >= 5 {
 				return errors.New("too many redirects")
@@ -527,7 +526,7 @@ func (p *openaiCompatProvider) postChat(ctx context.Context, reqBody oaiChatRequ
 	}
 	defer httpResp.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(httpResp.Body, maxHTTPBodyBytes))
+	data, err := readBodyBounded(httpResp.Body)
 	if err != nil {
 		return "", oaiChatResponse{}, httpResp.StatusCode, "", fmt.Errorf("read response: %w", err)
 	}

@@ -159,6 +159,7 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 		resolved, rErr := autoResolveDerivedConflicts(repoPath)
 		if resolved {
 			logMsg("git", "pull conflict on derived file(s) auto-resolved — content regenerates after pull")
+			invalidateRepoTrackedCache()
 			afterSHA := gitSHA(repoPath)
 			return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
 		}
@@ -167,6 +168,7 @@ func pullRebase(repoPath string) (ok bool, pulled bool, err error) {
 		}
 		return false, false, fmt.Errorf("%s", firstLine(msg))
 	}
+	invalidateRepoTrackedCache()
 	afterSHA := gitSHA(repoPath)
 	return true, beforeSHA != "" && afterSHA != "" && beforeSHA != afterSHA, nil
 }

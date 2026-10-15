@@ -79,6 +79,20 @@ func refuseNonPublicURL(ctx context.Context, u *url.URL) error {
 // local LLM replies). Matches the Pinboard adapter's cap.
 const maxHTTPBodyBytes = 64 << 20
 
+// readBodyBounded is io.ReadAll with the same cap and the same failure:
+// a body over the limit is an error, never a silently shortened article
+// or a half JSON document that fails later for the wrong reason.
+func readBodyBounded(r io.Reader) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(r, maxHTTPBodyBytes+1))
+	if err != nil {
+		return data, err
+	}
+	if int64(len(data)) > maxHTTPBodyBytes {
+		return nil, fmt.Errorf("response exceeds the %d MiB limit", maxHTTPBodyBytes>>20)
+	}
+	return data, nil
+}
+
 // copyBounded copies at most maxHTTPBodyBytes from src and fails when
 // the source has more, so a runaway download cannot fill the disk.
 func copyBounded(dst io.Writer, src io.Reader) (int64, error) {
@@ -347,7 +361,7 @@ func fetchJina(ctx context.Context, rawURL string) (fetchResult, error) {
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("jina status %d", resp.StatusCode)
 		}
-		raw, err = io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
+		raw, err = readBodyBounded(resp.Body)
 		if err != nil {
 			return fmt.Errorf("jina read: %w", err)
 		}

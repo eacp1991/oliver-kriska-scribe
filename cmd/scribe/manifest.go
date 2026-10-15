@@ -162,7 +162,7 @@ func loadManifest(root string) (*Manifest, error) {
 		if !fi.Mode().IsRegular() {
 			return nil, errors.New("scripts/projects.json is not a regular file — refusing to load the manifest")
 		}
-		if rec := loadTrustRecord(root); rec != nil && rec.Sensitive.Team && repoFileTracked(root, "scripts/projects.json") {
+		if teamKB(root, nil) && repoFileTracked(root, "scripts/projects.json") {
 			return nil, errors.New("scripts/projects.json is tracked by git in a team KB — it must stay per-machine; run `git rm --cached scripts/projects.json`, commit, and re-run")
 		}
 	}

@@ -302,7 +302,7 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 		}
 
 		for _, d := range unprocessed {
-			data, err := os.ReadFile(d)
+			data, err := readRegularFile(d)
 			if err != nil {
 				continue
 			}
@@ -422,7 +422,7 @@ func deriveResearchTitle(flatName string) string {
 // bytes are unchanged so a mere mtime bump (git checkout, rsync, touch) does
 // not clobber the contextualize enrichment and force a re-contextualize.
 func (s *SyncCmd) collectOneResearchFile(f researchFile, destDir, domain, pname string) collectOutcome {
-	data, err := os.ReadFile(f.path)
+	data, err := readRegularFile(f.path)
 	if err != nil {
 		return collectFailed
 	}

@@ -722,6 +722,25 @@ func applyUpdateFrontmatterAction(res *ApplyResult, i int, abs string, a WikiAct
 		return
 	}
 	updates := a.Frontmatter
+	if opts.OverwriteSource != "" {
+		// Ownership is read from sources:. Letting the same envelope
+		// rewrite sources: and then create over the page would make
+		// the OverwriteSource gate self-granting.
+		if _, has := updates["sources"]; has {
+			logMsg("envelope", "action[%d] update_frontmatter %s: dropped sources (ownership field)", i, a.Path)
+			cp := make(map[string]any, len(updates))
+			for k, v := range updates {
+				if k != "sources" {
+					cp[k] = v
+				}
+			}
+			updates = cp
+			if len(updates) == 0 {
+				res.Skipped = append(res.Skipped, a.Path)
+				return
+			}
+		}
+	}
 	if opts.ProtectProvenance {
 		kept, dropped := filterProvenanceKeys(updates)
 		if len(dropped) > 0 {
@@ -852,6 +871,14 @@ func applyMetaLogAppend(root string, m MetaAction, opts ApplyOptions) error {
 		return nil
 	}
 	logPath := filepath.Join(root, "log.md")
+	// log.md is push-reachable: a committed symlink would turn every
+	// session-mine and dream run into an append on a host file.
+	if fi, err := os.Lstat(logPath); err == nil && !fi.Mode().IsRegular() {
+		return fmt.Errorf("log_append: %s is not a regular file", logPath)
+	}
+	if symlinkEscapes(root, logPath) {
+		return fmt.Errorf("log_append: %s resolves outside the KB", logPath)
+	}
 	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open log.md: %w", err)

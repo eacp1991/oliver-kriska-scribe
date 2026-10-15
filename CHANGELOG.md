@@ -2,6 +2,33 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Security
+
+Follow-up from the reviewer's second pass over 0.5.9.
+
+- A fresh team clone now refuses a tracked `scripts/projects.json` before
+  the trust record exists: `teamKB` reads `team: true` from the repo's own
+  `scribe.yaml` when no record is stored yet.
+- A `git pull` inside `sync` invalidates the memoized ls-files answers, so a
+  force-added `scribe.local.yaml` or manifest that arrives mid-run is seen
+  as tracked by every later config load in the same process.
+- `log_append` refuses a `log.md` that is a symlink or resolves outside
+  the KB. The inbox directory itself may not be a symlink out of the KB.
+  Drop files and research files are read only when they are regular files.
+- Under an ownership-gated overwrite, `update_frontmatter` can no longer
+  rewrite `sources:`; the ownership field could otherwise be set and then
+  used by a `create` in the same envelope.
+- EPUB conversion skips repeated spine entries and caps the assembled text
+  at the per-entry limit, so a spine that repeats one chapter cannot
+  multiply it in memory.
+- HTTP bodies over 64 MiB are an error rather than a silently shortened
+  article or a half JSON reply. Hosted-LLM redirects must keep the scheme
+  as well as the host, closing an https-to-http downgrade.
+- Read-only git grants are withheld when the repository path contains a
+  `,` or `)`, since either would split the permission rule.
+
 ## [0.5.9] — 2026-10-15
 
 Security hardening from an external audit (2026-10-15). The findings

@@ -55,12 +55,19 @@ func convertEPUBTier0(data []byte) (string, error) {
 
 	opfDir := path.Dir(opfPath)
 	var sb strings.Builder
+	seen := make(map[string]bool, len(spine))
 	for i, idref := range spine {
 		href, ok := manifest[idref]
 		if !ok {
 			continue
 		}
 		fullPath := path.Join(opfDir, href)
+		// A spine that repeats an itemref is malformed; honoring it
+		// multiplies one bounded chapter past the per-entry cap.
+		if seen[fullPath] {
+			continue
+		}
+		seen[fullPath] = true
 		f, ok := files[fullPath]
 		if !ok {
 			continue
@@ -73,6 +80,9 @@ func convertEPUBTier0(data []byte) (string, error) {
 		md = strings.TrimSpace(md)
 		if md == "" {
 			continue
+		}
+		if int64(sb.Len()+len(md)) > maxZipEntryBytes {
+			return "", fmt.Errorf("epub text exceeds the %d MiB limit", maxZipEntryBytes>>20)
 		}
 		if i > 0 && sb.Len() > 0 {
 			sb.WriteString("\n\n---\n\n")

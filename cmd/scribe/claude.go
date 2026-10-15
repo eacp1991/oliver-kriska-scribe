@@ -80,6 +80,13 @@ func toolBaseNames(tools []string) []string {
 // command starting with `git -C`, including `git -C <repo> push`; these
 // patterns pin both the path and a read-only verb.
 func readOnlyGitTools(repoPath string) []string {
+	// The rules are joined with "," for --allowedTools and closed with
+	// ")"; either character inside the path would end the rule early and
+	// turn the remainder into a different grant. No git for such a path.
+	if strings.ContainsAny(repoPath, ",)\x00\n") {
+		logMsg("claude", "git tools withheld: repo path %q contains a rule delimiter", repoPath)
+		return nil
+	}
 	verbs := []string{"log", "show", "diff", "grep", "ls-files", "blame", "rev-parse", "status", "shortlog"}
 	out := make([]string, 0, len(verbs))
 	for _, v := range verbs {

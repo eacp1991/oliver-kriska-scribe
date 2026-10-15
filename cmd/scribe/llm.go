@@ -586,7 +586,7 @@ func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode b
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
+	data, err := readBodyBounded(resp.Body)
 	if err != nil {
 		entry.OK = false
 		entry.ErrKind = "other"

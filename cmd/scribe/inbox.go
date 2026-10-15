@@ -65,7 +65,7 @@ func drainFileInbox(root string) (int, error) {
 	// shared team config make scribe read arbitrary local files and ingest
 	// them as articles (exfiltration), or scatter .processed/.failed dirs
 	// outside the KB. Refuse anything that doesn't resolve under root.
-	if !pathWithinRoot(root, inbox) {
+	if !pathWithinRoot(root, inbox) || symlinkEscapes(root, inbox) {
 		return 0, fmt.Errorf("ingest.inbox_path %q resolves outside the KB root %q — refusing to drain an out-of-tree inbox", inboxRel, root)
 	}
 
