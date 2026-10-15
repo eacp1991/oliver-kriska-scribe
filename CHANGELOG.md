@@ -2,6 +2,68 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+Security hardening from an external audit (2026-10-15). The findings
+mattered most on team KBs, where a collaborator's `git push` lands files on
+your machine before scribe reads them. Solo KBs get the same fixes.
+
+### Security
+
+- **F1 — local override trust bypass.** `scribe.local.yaml` is read only when
+  it is a regular file (no symlinks). On a team KB it is also refused when
+  git tracks it, so a force-added copy in the repo cannot carry provider,
+  model or path overrides past the trust layer.
+- **F2 — `claude -p` isolation.** Every `claude -p` call now runs with
+  `--setting-sources ""`, `--strict-mcp-config`, `--disable-slash-commands`
+  and `--settings '{"disableAllHooks":true}'`. Pure-text calls pass
+  `--tools ""`; tool-using calls pass the explicit tool list to `--tools` as
+  well as `--allowedTools`. The user's hooks, MCP servers, slash commands and
+  settings files no longer load into scribe's model sessions. (The old
+  `--settings '{"hooks":{}}'` never disabled hooks: settings maps merge.)
+- **F3 — unlocked config fields.** `sync.auto_approve` joins the trust
+  snapshot. `domains`, `kb_name` and `meta.rolling_targets` are reduced to
+  single path segments; offending values are dropped with a logged notice.
+  The source filters are re-checked at use time in extraction, drop-file and
+  research collection.
+- **F4 — filesystem confinement.** Atomic writes use random `O_EXCL` temp
+  names instead of `<path>.tmp`. Inbox drain, markdown walks and raw reads
+  skip symlinks. Action paths that resolve outside the KB through a symlinked
+  directory are refused, including in the relations-migration revert.
+- **F5 — legacy tool modes.** Tool-using modes keep Bash but git is granted
+  scoped to the repository path and read-only verbs (`log`, `show`, `diff`,
+  `grep`, `ls-files`, `blame`, `rev-parse`, `status`, `shortlog`) instead of
+  `Bash(git -C:*)`.
+- **F6 — envelope scoping.** An envelope can only overwrite pages its own
+  source owns; `sessions_log_append` is applied by the session miner itself
+  and ignored from envelopes; dream hot-path envelopes are limited to their
+  domain; absorb envelopes cannot write meta rolling targets.
+- **F7 — resource bounds.** Zip entries (docx, epub) are capped at 64 MiB,
+  HTTP bodies (fetchers, hosted LLM responses) at 64 MiB, and
+  `scripts/projects.json` is refused when it is not a regular user-owned
+  file.
+- **F8 — URL policy (defense in depth).** Queued URLs must be http/https and
+  must not resolve to loopback, private, link-local or unspecified addresses.
+  Hosted OpenAI-compatible endpoints must be https unless loopback, and the
+  client refuses cross-origin redirects.
+- **F9 — secret gate.** `.toml`, `.env` and `.env.*` files are scanned; the
+  ls-files set is filtered in Go; user redaction stop words win over
+  defaults; new `secret_scan.enable` lets a solo KB opt in (team KBs stay on
+  unless disabled).
+- **F10 — CLI path inputs.** `projects add`, drop-file names, marker image
+  preservation and rolling-target writes are contained to their directories.
+- **F11 / L1–L4.** `cron install` shell-quotes watch arguments; gitops
+  validates SHAs; `install.sh` builds the requested tag; `absorb-compare.sh`
+  uses `mktemp` with cleanup; ingest and cost-ledger logs redact URL tokens;
+  the manual release workflow validates its tag input; getscribe.dev sends
+  HSTS.
+
+### Deferred
+
+Lock and log directories stay under `/tmp` (the lock is shared with the live
+cron binary, so a move needs a transition release). A site CSP and cosign
+verification in `install.sh` are still open.
+
 ## [0.5.8] — 2026-10-14
 
 `scribe doctor` now checks the qmd index by its result: whether a collection
