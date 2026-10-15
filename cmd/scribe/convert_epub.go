@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"strings"
 
@@ -92,12 +91,7 @@ func convertEPUBTier0(data []byte) (string, error) {
 // (typically "OEBPS/content.opf" or "content.opf"). EPUB allows
 // multiple rootfiles; we pick the first.
 func readOPFPath(f *zip.File) (string, error) {
-	rc, err := f.Open()
-	if err != nil {
-		return "", fmt.Errorf("open container.xml: %w", err)
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
+	data, err := readZipEntry(f)
 	if err != nil {
 		return "", fmt.Errorf("read container.xml: %w", err)
 	}
@@ -123,12 +117,7 @@ func readOPFPath(f *zip.File) (string, error) {
 //   - manifest: id → href map
 //   - spine:    list of idrefs in reading order
 func readOPF(f *zip.File) (map[string]string, []string, error) {
-	rc, err := f.Open()
-	if err != nil {
-		return nil, nil, fmt.Errorf("open opf: %w", err)
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
+	data, err := readZipEntry(f)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read opf: %w", err)
 	}
@@ -163,12 +152,7 @@ func readOPF(f *zip.File) (map[string]string, []string, error) {
 }
 
 func chapterToMarkdown(f *zip.File) (string, error) {
-	rc, err := f.Open()
-	if err != nil {
-		return "", err
-	}
-	defer rc.Close()
-	data, err := io.ReadAll(rc)
+	data, err := readZipEntry(f)
 	if err != nil {
 		return "", err
 	}

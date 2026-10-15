@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -117,7 +116,7 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 		if used >= maxTotal {
 			return false
 		}
-		data, err := os.ReadFile(path)
+		data, err := readRegularFile(path)
 		if err != nil {
 			return false
 		}

@@ -485,7 +485,7 @@ func (p *openaiCompatProvider) postChat(ctx context.Context, reqBody oaiChatRequ
 	}
 	defer httpResp.Body.Close()
 
-	data, err := io.ReadAll(httpResp.Body)
+	data, err := io.ReadAll(io.LimitReader(httpResp.Body, maxHTTPBodyBytes))
 	if err != nil {
 		return "", oaiChatResponse{}, httpResp.StatusCode, "", fmt.Errorf("read response: %w", err)
 	}

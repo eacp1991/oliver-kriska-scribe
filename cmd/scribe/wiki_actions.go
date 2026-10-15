@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1073,19 +1075,49 @@ var errUnknownTopDir = errors.New("path outside known wiki dirs")
 // writeFileAtomic writes content to path via tmp + rename so a
 // partially-written file is never observed by readers. The parent
 // dir is created on demand.
+//
+// The temp name is random and opened O_EXCL: a fixed `<path>.tmp` could
+// be pre-planted as a symlink (committed to a team KB, materialized by
+// pull) and os.WriteFile would have followed it, truncating whatever it
+// pointed at outside the KB. O_EXCL refuses to open through any existing
+// name, symlink included, and the random suffix removes the guess.
 func writeFileAtomic(path string, content []byte, mode os.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("mkdir parent: %w", err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, content, mode); err != nil {
+	tmp, err := tempPathFor(path)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+	if err != nil {
 		return fmt.Errorf("write tmp: %w", err)
+	}
+	if _, err := f.Write(content); err != nil {
+		f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write tmp: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close tmp: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("rename: %w", err)
 	}
 	return nil
+}
+
+// tempPathFor returns a sibling temp name for path: same directory (so
+// the final rename stays on one filesystem), dot-prefixed (so walkers
+// that skip dotfiles never read a half-written page), random suffix.
+func tempPathFor(path string) (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("temp name: %w", err)
+	}
+	return filepath.Join(filepath.Dir(path), ".scribe-"+hex.EncodeToString(b[:])+".tmp"), nil
 }
 
 // appendToFile appends content to the target. Missing file is an

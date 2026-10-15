@@ -376,7 +376,7 @@ func (o *ollamaProvider) listedModels(ctx context.Context) ([]string, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 		return nil, fmt.Errorf("ollama %d: %s", resp.StatusCode, string(body))
 	}
 	var tags struct {
@@ -445,7 +445,7 @@ func (o *ollamaProvider) pull(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 		return fmt.Errorf("ollama pull http %d: %s", resp.StatusCode, string(b))
 	}
 	scanner := bufio.NewScanner(resp.Body)
@@ -586,7 +586,7 @@ func (o *ollamaProvider) generate(ctx context.Context, prompt string, jsonMode b
 	}
 	defer resp.Body.Close()
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 	if err != nil {
 		entry.OK = false
 		entry.ErrKind = "other"

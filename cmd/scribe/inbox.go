@@ -108,6 +108,13 @@ func drainFileInbox(root string) (int, error) {
 		if strings.HasPrefix(name, ".") {
 			continue
 		}
+		// raw/inbox is tracked, so in a team KB a symlink here arrived by
+		// pull; following it would read a file from the member's disk
+		// into raw/articles/ and push it to the team.
+		if entry.Type()&os.ModeSymlink != 0 {
+			logMsg("inbox", "skip %s: symlinks are not ingested", name)
+			continue
+		}
 		// Skip files still being written. Heuristic: a stat'd size of 0
 		// in a non-empty filesystem is almost always a placeholder.
 		full := filepath.Join(inbox, name)
@@ -339,11 +346,7 @@ func (s *inboxState) persist(inboxDir string) error {
 		return fmt.Errorf("marshal state: %w", err)
 	}
 	dst := filepath.Join(inboxDir, inboxStateFilename)
-	tmp := dst + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("write state tmp: %w", err)
-	}
-	return os.Rename(tmp, dst)
+	return writeFileAtomic(dst, data, 0o644)
 }
 
 // sha256File hashes the bytes of full into a lowercase hex digest.

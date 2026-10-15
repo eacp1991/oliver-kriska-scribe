@@ -231,7 +231,7 @@ func stripFrontmatter(s string) string {
 // Ollama out of the box.
 func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	cfg := loadConfig(root)
-	rawBody, err := os.ReadFile(rawFile)
+	rawBody, err := readRegularFile(rawFile)
 	if err != nil {
 		return fmt.Errorf("absorb-single: read raw article: %w", err)
 	}
@@ -435,7 +435,7 @@ func (s *SyncCmd) preparePass2(ctx context.Context, root, rawFile, rawName, plan
 		// Preload the raw article body and plan JSON once; every
 		// pass-2 goroutine inlines the same blobs (only the entity
 		// fields differ).
-		data, err := os.ReadFile(rawFile)
+		data, err := readRegularFile(rawFile)
 		if err != nil {
 			return pass2Run{}, ctx, fmt.Errorf("pass2 json: read raw article: %w", err)
 		}

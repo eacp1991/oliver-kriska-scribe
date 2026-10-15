@@ -211,11 +211,7 @@ func (m *Manifest) save() error {
 		return err
 	}
 	data = append(data, '\n')
-	tmp := m.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, m.path); err != nil {
+	if err := writeFileAtomic(m.path, data, 0o644); err != nil {
 		return err
 	}
 	// migratedCount is set once, by migrateToPathKeys on load, when the

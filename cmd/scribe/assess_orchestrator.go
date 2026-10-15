@@ -104,7 +104,7 @@ func assessReadTopDocs(projectPath string, maxChars int) string {
 	var sb strings.Builder
 	for _, c := range candidates {
 		p := filepath.Join(projectPath, c)
-		data, err := os.ReadFile(p)
+		data, err := readRegularFile(p)
 		if err != nil {
 			continue
 		}

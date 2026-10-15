@@ -34,6 +34,24 @@ type fetchResult struct {
 // tier is optional: a missing binary or a hard fail falls through to
 // the next. forced lets callers pin a specific fetcher ("fxtwitter",
 // "trafilatura", "defuddle", "jina", "arxiv").
+// maxHTTPBodyBytes bounds every response body scribe reads into memory
+// or onto disk (article fetchers, arXiv metadata and PDFs, hosted and
+// local LLM replies). Matches the Pinboard adapter's cap.
+const maxHTTPBodyBytes = 64 << 20
+
+// copyBounded copies at most maxHTTPBodyBytes from src and fails when
+// the source has more, so a runaway download cannot fill the disk.
+func copyBounded(dst io.Writer, src io.Reader) (int64, error) {
+	n, err := io.Copy(dst, io.LimitReader(src, maxHTTPBodyBytes+1))
+	if err != nil {
+		return n, err
+	}
+	if n > maxHTTPBodyBytes {
+		return n, fmt.Errorf("response exceeds the %d MiB limit", maxHTTPBodyBytes>>20)
+	}
+	return n, nil
+}
+
 func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme == "" {
@@ -286,7 +304,7 @@ func fetchJina(ctx context.Context, rawURL string) (fetchResult, error) {
 		if resp.StatusCode != http.StatusOK {
 			return fmt.Errorf("jina status %d", resp.StatusCode)
 		}
-		raw, err = io.ReadAll(resp.Body)
+		raw, err = io.ReadAll(io.LimitReader(resp.Body, maxHTTPBodyBytes))
 		if err != nil {
 			return fmt.Errorf("jina read: %w", err)
 		}
