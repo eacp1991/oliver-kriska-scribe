@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	gosync "sync"
@@ -250,6 +251,75 @@ type ApplyOptions struct {
 	// brackets (facts pass off / file absent — matches the prompt's
 	// drop-the-bracket fallback).
 	ValidFactIDs map[string]bool
+	// OverwriteSource narrows AllowOverwrite to pages this source owns:
+	// a `create` over an existing file goes through only when that
+	// file's `sources:` frontmatter already names OverwriteSource (same
+	// path, or same basename — raw article names are unique). Re-absorbing
+	// a raw article still regenerates its own pages; a slug collision or a
+	// prompt-injected article cannot replace a page written from another
+	// source. Absorb sets it to the raw file it is absorbing.
+	OverwriteSource string
+	// AllowedDomains, when non-empty, confines every projects/<domain>/…
+	// action path and every rolling_memory_append to these domains.
+	// dream --hot packs one domain into the prompt and must not be able to
+	// write into any other.
+	AllowedDomains []string
+	// DisallowMetaRolling refuses rolling_memory_append outright. The
+	// absorb prompts never ask for it, so an absorb envelope carrying one
+	// is a model (or an article) overreaching into projects/ memory.
+	DisallowMetaRolling bool
+}
+
+// pageOwnedBySource reports whether the page at abs lists src in its
+// sources: frontmatter — by exact string or by basename. A page without
+// parseable frontmatter or without sources is nobody's to overwrite.
+func pageOwnedBySource(abs, src string) bool {
+	data, err := os.ReadFile(abs)
+	if err != nil {
+		return false
+	}
+	raw, err := parseFrontmatterRaw(data)
+	if err != nil {
+		return false
+	}
+	var entries []string
+	switch v := raw["sources"].(type) {
+	case string:
+		entries = []string{v}
+	case []any:
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				entries = append(entries, s)
+			}
+		}
+	}
+	base := filepath.Base(src)
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == src || (base != "" && filepath.Base(e) == base) {
+			return true
+		}
+	}
+	return false
+}
+
+// domainAllowed is the AllowedDomains check shared by action paths and
+// rolling appends. An empty list means unrestricted.
+func domainAllowed(opts ApplyOptions, domain string) bool {
+	if len(opts.AllowedDomains) == 0 {
+		return true
+	}
+	return slices.Contains(opts.AllowedDomains, domain)
+}
+
+// actionPathDomain returns the <domain> of a projects/<domain>/… path
+// (relative to root), or "" for any other path.
+func actionPathDomain(rel string) string {
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(rel)), "/")
+	if len(parts) >= 3 && parts[0] == "projects" {
+		return parts[1]
+	}
+	return ""
 }
 
 // ApplyResult summarizes what the executor did. Returned even on
@@ -412,6 +482,10 @@ func applyWikiActions(root string, env WikiActionEnvelope, opts ApplyOptions) (A
 			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] %s %q: %v", i, a.Op, a.Path, err))
 			continue
 		}
+		if d := actionPathDomain(a.Path); d != "" && !domainAllowed(opts, d) {
+			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] %s %q: domain %q outside this run's scope", i, a.Op, a.Path, d))
+			continue
+		}
 		switch a.Op {
 		case "create":
 			applyCreateAction(&res, i, abs, a, opts)
@@ -510,9 +584,13 @@ func applyCreateAction(res *ApplyResult, i int, abs string, a WikiAction, opts A
 		res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: refusing empty page (no body after frontmatter)", i, a.Path))
 		return
 	}
-	if !opts.AllowOverwrite {
-		if _, err := os.Stat(abs); err == nil {
+	if _, err := os.Stat(abs); err == nil {
+		if !opts.AllowOverwrite {
 			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: file exists and AllowOverwrite=false", i, a.Path))
+			return
+		}
+		if opts.OverwriteSource != "" && !pageOwnedBySource(abs, opts.OverwriteSource) {
+			res.Errors = append(res.Errors, fmt.Sprintf("action[%d] create %q: file exists and its sources do not include %s — refusing to replace a page written from another source", i, a.Path, filepath.Base(opts.OverwriteSource)))
 			return
 		}
 	}
@@ -721,8 +799,18 @@ func applyMetaAction(root string, m MetaAction, opts ApplyOptions) error {
 	case "log_append":
 		return applyMetaLogAppend(root, m, opts)
 	case "sessions_log_append":
-		return applyMetaSessionsLogAppend(root, m, opts)
+		// Accepted for compatibility (prompts and local models still emit
+		// it) but never applied: Go records the session it actually mined
+		// (recordSessionProcessed), so a transcript cannot mark OTHER
+		// session ids as processed and get them skipped forever.
+		return nil
 	case "rolling_memory_append":
+		if opts.DisallowMetaRolling {
+			return errors.New("rolling_memory_append: not permitted for this consumer")
+		}
+		if !domainAllowed(opts, m.Domain) {
+			return fmt.Errorf("rolling_memory_append: domain %q outside this run's scope", m.Domain)
+		}
 		return applyMetaRollingAppend(root, m, opts)
 	default:
 		return fmt.Errorf("unknown meta op %q", m.Op)
@@ -773,7 +861,9 @@ func applyMetaLogAppend(root string, m MetaAction, opts ApplyOptions) error {
 	return nil
 }
 
-// applyMetaSessionsLogAppend records one session ID under
+// applyMetaSessionsLogAppend is the Go-side writer behind
+// recordSessionProcessed; applyMetaAction no longer routes the model's
+// sessions_log_append here. It records one session ID under
 // wiki/_sessions_log.json's `processed` map. The Phase 4C envelope
 // replaces the previous "Claude writes the file" approach; centralizing
 // this in Go gives us a per-file lock against concurrent session-mine

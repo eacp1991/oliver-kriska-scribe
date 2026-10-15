@@ -92,3 +92,105 @@ func TestMarkerImagesStayInsideOutDir(t *testing.T) {
 		t.Error("image reference above the marker output dir was copied into the KB")
 	}
 }
+
+// --- Phase 3B: executor scoping -----------------------------------------
+
+func writePage(t *testing.T, root, rel, content string) string {
+	t.Helper()
+	p := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestCreateOverwriteRequiresSourceOwnership(t *testing.T) {
+	root := t.TempDir()
+	raw := filepath.Join(root, "raw", "articles", "my-article.md")
+	owned := writePage(t, root, "wiki/owned.md", "---\ntitle: Owned\nsources: [\""+raw+"\"]\n---\nold\n")
+	byBase := writePage(t, root, "wiki/by-base.md", "---\ntitle: B\nsources:\n  - raw/articles/my-article.md\n---\nold\n")
+	foreign := writePage(t, root, "wiki/foreign.md", "---\ntitle: F\nsources: [\"/elsewhere/other.md\"]\n---\nold\n")
+	curated := writePage(t, root, "wiki/curated.md", "---\ntitle: C\n---\nold\n")
+
+	env := WikiActionEnvelope{Actions: []WikiAction{
+		{Op: "create", Path: "wiki/owned.md", Content: "new"},
+		{Op: "create", Path: "wiki/by-base.md", Content: "new"},
+		{Op: "create", Path: "wiki/foreign.md", Content: "new"},
+		{Op: "create", Path: "wiki/curated.md", Content: "new"},
+		{Op: "create", Path: "wiki/fresh.md", Content: "new"},
+	}}
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowOverwrite: true, OverwriteSource: raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(p string) string { b, _ := os.ReadFile(p); return string(b) }
+	if read(owned) != "new" || read(byBase) != "new" {
+		t.Errorf("pages owned by the source must be replaced: owned=%q byBase=%q", read(owned), read(byBase))
+	}
+	if read(foreign) == "new" || read(curated) == "new" {
+		t.Errorf("pages from another source / without sources must survive: foreign=%q curated=%q", read(foreign), read(curated))
+	}
+	if read(filepath.Join(root, "wiki", "fresh.md")) != "new" {
+		t.Error("a brand-new page must still be created")
+	}
+	if len(res.Errors) != 2 {
+		t.Errorf("expected exactly the two refusals, got %v", res.Errors)
+	}
+}
+
+func TestAllowedDomainsConfineProjectWrites(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Actions: []WikiAction{
+		{Op: "create", Path: "projects/hot/notes.md", Content: "in scope"},
+		{Op: "create", Path: "projects/other/notes.md", Content: "out of scope"},
+		{Op: "create", Path: "wiki/page.md", Content: "not a project path"},
+	}}
+	res, err := applyWikiActions(root, env, ApplyOptions{AllowedDomains: []string{"hot"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "projects", "hot", "notes.md")); err != nil {
+		t.Error("in-scope domain write refused")
+	}
+	if _, err := os.Stat(filepath.Join(root, "projects", "other", "notes.md")); err == nil {
+		t.Error("out-of-scope domain write went through")
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "page.md")); err != nil {
+		t.Error("non-project path must be unaffected by AllowedDomains")
+	}
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0], "outside this run's scope") {
+		t.Errorf("errors = %v", res.Errors)
+	}
+}
+
+func TestRollingAppendScoping(t *testing.T) {
+	root := t.TempDir()
+	meta := []MetaAction{{Op: "rolling_memory_append", Domain: "general", Target: "learnings", Content: "x"}}
+	res, _ := applyWikiActions(root, WikiActionEnvelope{Meta: meta}, ApplyOptions{DisallowMetaRolling: true})
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0], "not permitted") {
+		t.Errorf("DisallowMetaRolling: %v", res.Errors)
+	}
+	res, _ = applyWikiActions(root, WikiActionEnvelope{Meta: meta}, ApplyOptions{AllowedDomains: []string{"personal"}})
+	if len(res.Errors) != 1 || !strings.Contains(res.Errors[0], "outside this run's scope") {
+		t.Errorf("AllowedDomains on rolling append: %v", res.Errors)
+	}
+	res, _ = applyWikiActions(root, WikiActionEnvelope{Meta: meta}, ApplyOptions{AllowedDomains: []string{"general"}})
+	if len(res.Errors) != 0 {
+		t.Errorf("in-scope rolling append refused: %v", res.Errors)
+	}
+}
+
+func TestModelSessionLogAppendIsIgnored(t *testing.T) {
+	root := t.TempDir()
+	env := WikiActionEnvelope{Meta: []MetaAction{{Op: "sessions_log_append", SessionID: "someone-elses-session"}}}
+	res, err := applyWikiActions(root, env, entityWriterApplyOptions())
+	if err != nil || len(res.Errors) != 0 {
+		t.Fatalf("op must be accepted silently: err=%v errors=%v", err, res.Errors)
+	}
+	if _, err := os.Stat(filepath.Join(root, "wiki", "_sessions_log.json")); err == nil {
+		t.Fatal("a model-supplied session id was recorded")
+	}
+}

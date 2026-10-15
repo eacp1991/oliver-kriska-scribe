@@ -277,6 +277,8 @@ func (s *SyncCmd) absorbSinglePass(root, rawFile string) error {
 	// + strip both run inside the SanitizeContent seam now.
 	res, err := applyWikiActions(root, env, ApplyOptions{
 		AllowOverwrite:        true,
+		OverwriteSource:       rawFile,
+		DisallowMetaRolling:   true,
 		RemapUnknownTopToWiki: true,
 		SanitizeContent:       true,
 	})
@@ -701,6 +703,8 @@ func (s *SyncCmd) runPass2JSONEntity(gctx context.Context, run pass2Run, ent abs
 	}
 	res, err := applyWikiActions(run.root, env, ApplyOptions{
 		AllowOverwrite:        true,
+		OverwriteSource:       run.rawFile,
+		DisallowMetaRolling:   true,
 		RemapUnknownTopToWiki: true,
 		SanitizeContent:       true,
 		ValidFactIDs:          validIDs,
