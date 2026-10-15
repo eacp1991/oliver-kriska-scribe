@@ -844,7 +844,13 @@ func applyMetaRollingAppend(root string, m MetaAction, opts ApplyOptions) error 
 	if opts.DryRun {
 		return nil
 	}
-	path := filepath.Join(root, "projects", m.Domain, m.Target+".md")
+	// Both segments passed an allowlist, but the allowlists come from a
+	// repo-controlled scribe.yaml; run the joined path through the same
+	// gate every other action path takes (no traversal, inside projects/).
+	path, err := validateActionPath(root, filepath.Join("projects", m.Domain, m.Target+".md"))
+	if err != nil {
+		return fmt.Errorf("rolling_memory_append: %w", err)
+	}
 	rollingMemoryMu.Lock()
 	defer rollingMemoryMu.Unlock()
 	if !fileExists(path) {
