@@ -156,6 +156,7 @@ func (s *SyncCmd) extract(root string, manifest *Manifest) (int, error) {
 func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []string {
 	var result []string
 	ledger := loadLedger(root)
+	cfg := loadConfig(root)
 	manifestDirty := false
 	unchanged := 0
 
@@ -190,6 +191,15 @@ func (s *SyncCmd) projectsNeedingExtraction(root string, manifest *Manifest) []s
 		}
 
 		if !dirExists(entry.Path) {
+			continue
+		}
+
+		// Approval is not the last word: the source filters are trust-
+		// locked, the manifest is not. An entry approved before a path
+		// landed in sources.exclude (or a manifest that arrived with a
+		// clone) must still pass the same gate discovery applies.
+		if !sourceAllowed(cfg, entry.Path) {
+			logMsg("sync", " [%s] excluded by sources filters — skipping", entry.Name)
 			continue
 		}
 

@@ -151,6 +151,21 @@ func (e *ProjectEntry) MergeDiscoveredFrom(source string) {
 // loadManifest reads the projects.json manifest.
 func loadManifest(root string) (*Manifest, error) {
 	path := filepath.Join(root, "scripts", "projects.json")
+	// In a team KB the manifest is per-machine and gitignored; its
+	// `approved` entries are paths scribe reads from without further
+	// consent. A force-added copy lands cleanly on a fresh clone (git
+	// only refuses to overwrite an EXISTING untracked file), so refuse a
+	// tracked or symlinked manifest outright rather than extract from
+	// paths another member chose — and rather than save over it, which
+	// `scribe commit`'s `git add .` would then push.
+	if fi, err := os.Lstat(path); err == nil {
+		if !fi.Mode().IsRegular() {
+			return nil, errors.New("scripts/projects.json is not a regular file — refusing to load the manifest")
+		}
+		if rec := loadTrustRecord(root); rec != nil && rec.Sensitive.Team && repoFileTracked(root, "scripts/projects.json") {
+			return nil, errors.New("scripts/projects.json is tracked by git in a team KB — it must stay per-machine; run `git rm --cached scripts/projects.json`, commit, and re-run")
+		}
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		// Shared-KB clones gitignore scripts/projects.json so each

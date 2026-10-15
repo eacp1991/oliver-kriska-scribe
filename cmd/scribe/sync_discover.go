@@ -278,6 +278,7 @@ func unprocessedDropFiles(kb string, entry *ProjectEntry) []string {
 func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 	totalDrops := 0
 	kb := kbName(root)
+	cfg := loadConfig(root)
 
 	// pname comes from entry.Name, NOT the manifest map key: the key is
 	// now a canonical filesystem path (see manifest.go), and staging dir
@@ -285,7 +286,7 @@ func (s *SyncCmd) collectDropFiles(root string, manifest *Manifest) int {
 	// "never leak the path key into KB naming" rule extractProject's
 	// pname parameter follows (sync_extract.go).
 	for _, entry := range manifest.Projects {
-		if !entry.IsApproved() {
+		if !entry.IsApproved() || !sourceAllowed(cfg, entry.Path) {
 			continue
 		}
 		pname := entry.Name
@@ -461,11 +462,12 @@ func (s *SyncCmd) collectOneResearchFile(f researchFile, destDir, domain, pname 
 
 func (s *SyncCmd) collectResearchFiles(root string, manifest *Manifest) int {
 	total := 0
+	cfg := loadConfig(root)
 
 	// pname comes from entry.Name — see the matching comment in
 	// collectDropFiles above.
 	for _, entry := range manifest.Projects {
-		if !entry.IsApproved() {
+		if !entry.IsApproved() || !sourceAllowed(cfg, entry.Path) {
 			continue
 		}
 		pname := entry.Name
