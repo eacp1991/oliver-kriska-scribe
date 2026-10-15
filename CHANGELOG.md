@@ -2,7 +2,7 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
-## [Unreleased]
+## [0.5.9] — 2026-10-15
 
 Security hardening from an external audit (2026-10-15). The findings
 mattered most on team KBs, where a collaborator's `git push` lands files on
