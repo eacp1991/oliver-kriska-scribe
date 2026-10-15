@@ -487,7 +487,7 @@ func findFiles(root string, patterns []string) []string {
 			return nil //nolint:nilerr // skip unreadable, continue walk
 		}
 		if info.IsDir() {
-			if excludeDirs[info.Name()] {
+			if excludeDirs[info.Name()] || nestedCheckout(root, path) {
 				return filepath.SkipDir
 			}
 			return nil

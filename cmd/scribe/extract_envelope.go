@@ -173,9 +173,19 @@ func gatherExtractFiles(root string, entry *ProjectEntry, changed []string, drop
 
 	// 4. Changed files since last extraction (caller passes up to 50).
 	// These are the "delta to absorb" — what a re-extraction is
-	// actually about.
-	for _, rel := range changed {
-		abs := filepath.Join(entry.Path, rel)
+	// actually about. gitChangedFiles returns absolute paths from all
+	// three of its branches; a relative entry is taken as repo-relative.
+	// Issue #138: joining an absolute path onto entry.Path again read
+	// <repo>/<repo>/file and silently dropped the whole delta.
+	for _, p := range changed {
+		abs := p
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(entry.Path, abs)
+		}
+		rel, err := filepath.Rel(entry.Path, abs)
+		if err != nil || strings.HasPrefix(rel, "..") {
+			rel = abs
+		}
 		appendFile("CHANGED: "+rel, abs)
 	}
 

@@ -2,6 +2,24 @@
 
 All notable changes to scribe are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/) (pre-1.0 — minor bumps may include breaking changes).
 
+## [Unreleased]
+
+### Fixed
+
+- **Envelope-mode extraction sends the changed files again (#138).** The
+  git helper returns absolute paths and the gather joined them onto the
+  project path a second time, so every incremental re-extraction silently
+  dropped its whole changed-file delta. Absolute and repo-relative inputs
+  are both accepted now, and a test feeds the helper's output straight in.
+- **Project walks skip nested checkouts (#131, worktree half).** Claude
+  Code worktrees under `.claude/worktrees/`, Worktrunk worktrees under
+  `.worktrees/` and submodules are full copies of the repo or another repo.
+  `scan`, `deep`, assess's tree sample, the non-git file fallback and the
+  recent-activity probe now skip any subdirectory that carries its own
+  `.git` entry, and the tools-mode extract and assess prompts say so too.
+  The tooling half of #131 (whether `.claude/agents`, `rules`, `skills`
+  count as project knowledge) is left open.
+
 ## [0.5.10] — 2026-10-15
 
 ### Security

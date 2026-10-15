@@ -299,7 +299,7 @@ func (s *SyncCmd) hasNewerFiles(entry *ProjectEntry) bool {
 	}
 
 	found := false
-	_ = filepath.Walk(entry.Path, func(_ string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(entry.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil || found {
 			return filepath.SkipDir
 		}
@@ -307,6 +307,9 @@ func (s *SyncCmd) hasNewerFiles(entry *ProjectEntry) bool {
 		if info.IsDir() {
 			switch name {
 			case "_build", "deps", "node_modules", ".git", ".elixir_ls":
+				return filepath.SkipDir
+			}
+			if nestedCheckout(entry.Path, path) {
 				return filepath.SkipDir
 			}
 			return nil
