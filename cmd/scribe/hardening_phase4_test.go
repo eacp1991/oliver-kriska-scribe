@@ -3,6 +3,7 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -240,5 +241,39 @@ func TestRelationsRevertKeepsPathsInsideKB(t *testing.T) {
 	after, _ := os.ReadFile(outside)
 	if !bytes.Equal(before, after) {
 		t.Fatalf("revert edited a file outside the KB")
+	}
+}
+
+// --- Phase 6: defense in depth ------------------------------------------
+
+func TestFetchURLRefusesNonPublicTargets(t *testing.T) {
+	ctx := context.Background()
+	for _, raw := range []string{
+		"file:///etc/passwd",
+		"ftp://example.com/x",
+		"http://localhost:8080/admin",
+		"http://127.0.0.1/",
+		"http://169.254.169.254/latest/meta-data/",
+		"http://10.0.0.1/",
+		"http://[::1]/",
+	} {
+		if _, err := fetchURL(ctx, raw, ""); err == nil {
+			t.Errorf("%s: expected refusal", raw)
+		} else if strings.Contains(err.Error(), "trafilatura") || strings.Contains(err.Error(), "defuddle") {
+			t.Errorf("%s: reached a fetcher before the policy check: %v", raw, err)
+		}
+	}
+}
+
+func TestRequireSecureBaseURL(t *testing.T) {
+	for _, ok := range []string{"https://api.together.xyz/v1", "http://localhost:1234/v1", "http://127.0.0.1:8000/v1", "http://[::1]:8000/v1"} {
+		if err := requireSecureBaseURL(ok); err != nil {
+			t.Errorf("%s refused: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"http://api.example.com/v1", "http://10.0.0.5/v1", "", "not a url"} {
+		if err := requireSecureBaseURL(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
 	}
 }

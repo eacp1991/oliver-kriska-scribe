@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os/exec"
@@ -34,6 +35,45 @@ type fetchResult struct {
 // tier is optional: a missing binary or a hard fail falls through to
 // the next. forced lets callers pin a specific fetcher ("fxtwitter",
 // "trafilatura", "defuddle", "jina", "arxiv").
+// fetchAllowPrivateHosts switches refuseNonPublicURL off. Tests that
+// stand up a loopback server set it; nothing else should.
+var fetchAllowPrivateHosts = false
+
+// refuseNonPublicURL rejects a queued URL before any fetcher sees it:
+// only http/https, and the host must not resolve to loopback, private,
+// link-local (cloud metadata lives at 169.254.169.254) or unspecified
+// addresses. The fetchers are external processes that resolve and follow
+// redirects on their own, so this is a pre-check, not a sandbox — it
+// stops the obvious case where a saved link points at a local service.
+func refuseNonPublicURL(ctx context.Context, u *url.URL) error {
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("unsupported URL scheme %q (only http/https are fetched)", u.Scheme)
+	}
+	if fetchAllowPrivateHosts {
+		return nil
+	}
+	host := u.Hostname()
+	if host == "" {
+		return errors.New("URL has no host")
+	}
+	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
+		return fmt.Errorf("refusing to fetch %s: local address", host)
+	}
+	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		// Unresolvable now; the fetcher will fail on its own. Not a
+		// policy decision.
+		return nil //nolint:nilerr // see comment
+	}
+	for _, addr := range ips {
+		ip := addr.IP
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return fmt.Errorf("refusing to fetch %s: resolves to a non-public address (%s)", host, ip)
+		}
+	}
+	return nil
+}
+
 // maxHTTPBodyBytes bounds every response body scribe reads into memory
 // or onto disk (article fetchers, arXiv metadata and PDFs, hosted and
 // local LLM replies). Matches the Pinboard adapter's cap.
@@ -56,6 +96,9 @@ func fetchURL(ctx context.Context, rawURL, forced string) (fetchResult, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme == "" {
 		return fetchResult{}, fmt.Errorf("invalid URL: %s", rawURL)
+	}
+	if err := refuseNonPublicURL(ctx, u); err != nil {
+		return fetchResult{}, err
 	}
 
 	host := strings.ToLower(u.Hostname())
