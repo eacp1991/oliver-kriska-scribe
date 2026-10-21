@@ -1,6 +1,6 @@
-# scribe — your knowledge base, written by your tools
+# scribe — an LLM wiki, written by your tools
 
-> scribe is the compiled, LLM-written knowledge base — the "LLM Wiki" pattern as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider. Project discovery covers Claude Code and Codex; the query-KB + write-drop-files handshake also reaches Amp. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
+> scribe is the compiled, LLM-written knowledge base — the [LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) Andrej Karpathy described, as a single-binary CLI: plain markdown in git, no vector DB, no RAG. It's memory your AI agents read before they decide, not a second brain you maintain and never reopen. It turns your git repos, coding-agent sessions, and self-sent links into a curated knowledge base with BM25 and local vector search. It mines every provider indexed by ccrider — Claude Code, Codex CLI, Copilot CLI, OpenCode, Pi, Antigravity, and Amp when imported by ccrider. Project discovery covers Claude Code and Codex; the query-KB + write-drop-files handshake also reaches Amp. Cross-project, cron-driven, runs 100% on local Ollama with zero API spend. In team mode, a small team points every machine at one git-backed KB — with a trust layer, a deterministic secret-scan commit gate, and per-git-remote approval keeping secrets, private client repos, and hostile config changes out of shared history.
 
 **License:** MIT · **Repo:** <https://github.com/oliver-kriska/scribe> · **Maintainer's KB:** 8,128 articles as of Aug 2026, zero typed by hand
 
@@ -8,7 +8,7 @@
 
 ## What scribe is
 
-scribe is an LLM-written knowledge base pipeline. It mines four input streams — git repos, coding-agent sessions via ccrider's FTS5 index (plus optional direct Codex CLI rollouts), URLs you text yourself, and drop files from other projects — then compiles a curated wiki of decisions, patterns, learnings, tool evaluations, and research. The wiki is plain markdown with YAML frontmatter, indexed by `qmd` for semantic search.
+scribe is an LLM-written knowledge base pipeline. It mines four input streams — git repos, coding-agent sessions via ccrider's FTS5 index (plus optional direct Codex CLI rollouts), URLs you text yourself, and drop files from other projects — then compiles a curated wiki of decisions, patterns, learnings, tool evaluations, and research. The wiki is plain markdown with YAML frontmatter, indexed by `qmd` for BM25 keyword and semantic vector search.
 
 scribe is not a RAG pipeline. It keeps raw sources verbatim under `raw/` AND compiles a structural wiki on top — both layers are searchable. Dense sources fan out into multiple entity-first wiki pages via a two-pass absorb (not one summary per source). LLM-generated retrieval-context paragraphs get spliced into every article so embedding models catch implicit entities.
 
@@ -327,7 +327,7 @@ In a plain git repo of markdown files at whatever path you pass to `scribe init`
 Hourly KB auto-commit, every 2 hours scan git repos for new decisions and patterns, three times a day mine coding-agent sessions via ccrider — plus direct Codex CLI rollouts when opted in — every 30 minutes drain queued URLs, every 4 hours pull self-iMessaged links, hourly pull of any configured bookmark integration (a no-op until you set one up), a weekly Dream cycle on Sunday with a daily hot-domain pass in between, a daily health report that writes any failing check to `NEEDS-ATTENTION.md` in the KB and removes the file once nothing fails, plus a continuous fsnotify watcher on the ccrider DB for near-real-time session extraction.
 
 **Is scribe an alternative to RAG for a personal knowledge base?**
-Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, and the parts an agent reads up front — the digest and the index — stay small enough to read whole.
+Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there is no vector DB to run: qmd keeps its BM25 and embedding index in one local SQLite file that scribe refreshes on every sync. Most lookups are plain-text BM25 matches, and the parts an agent reads up front — the digest and the index — stay small enough to read whole.
 
 **How is scribe different from Code Insights, AnythingLLM, or Obsidian?**
 Code Insights turns your AI coding sessions into an analytics dashboard in a local SQLite database; scribe turns them — plus your git repos and self-sent URLs — into a portable markdown wiki in git that your agents read back before they decide. AnythingLLM is a RAG chat app that needs a vector database and documents you upload; scribe needs neither. Obsidian is a manual notes tool you type into yourself — scribe writes the notes for you.
@@ -348,4 +348,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-10-01
+**Last updated:** 2026-10-21

@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>scribe — your knowledge base, written by your tools</title>
-<meta name="description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable." />
+<title>scribe — an LLM wiki, written by your tools</title>
+<meta name="description" content="The LLM wiki pattern as a single-binary CLI: turns your git repos, coding-agent sessions, and self-sent links into a curated markdown wiki with BM25 and local vector search. Cron-driven, fully local-capable." />
 <meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#1a1d22" media="(prefers-color-scheme: dark)" />
 
@@ -24,8 +24,8 @@
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="scribe" />
 <meta property="og:url" content="https://getscribe.dev/" />
-<meta property="og:title" content="scribe — your knowledge base, written by your tools" />
-<meta property="og:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Runs on cron. Fully local-capable." />
+<meta property="og:title" content="scribe — an LLM wiki, written by your tools" />
+<meta property="og:description" content="The LLM wiki pattern as a single-binary CLI: turns your git repos, coding-agent sessions, and self-sent links into a curated markdown wiki with BM25 and local vector search. Runs on cron. Fully local-capable." />
 <meta property="og:image" content="https://getscribe.dev/og-v4.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
@@ -38,8 +38,8 @@
 <meta name="twitter:site" content="@quatermain32" />
 <meta name="twitter:creator" content="@quatermain32" />
 <meta name="twitter:url" content="https://getscribe.dev/" />
-<meta name="twitter:title" content="scribe — your knowledge base, written by your tools" />
-<meta name="twitter:description" content="A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, searchable knowledge base. Runs on cron. Local-capable." />
+<meta name="twitter:title" content="scribe — an LLM wiki, written by your tools" />
+<meta name="twitter:description" content="The LLM wiki pattern as a single-binary CLI: git repos, coding-agent sessions, and self-sent links compiled into a curated, searchable markdown wiki. Runs on cron. Local-capable." />
 <meta name="twitter:image" content="https://getscribe.dev/og-v4.png" />
 <meta name="twitter:image:alt" content="scribe — over 7,400 docs, $0/sync, ~70s per run." />
 
@@ -49,7 +49,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "scribe",
-  "description": "A single-binary CLI that turns your git repos, coding-agent sessions, and self-sent links into a curated, semantically searchable knowledge base. Cross-project, cron-driven, fully local-capable.",
+  "description": "The LLM wiki pattern as a single-binary CLI: turns your git repos, coding-agent sessions, and self-sent links into a curated markdown wiki with BM25 and local vector search. Cron-driven, fully local-capable.",
   "url": "https://getscribe.dev/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux",
@@ -207,7 +207,7 @@
       "name": "Is scribe an alternative to RAG for a personal knowledge base?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front — the digest and the index — stay small enough to read whole."
+        "text": "Yes. scribe is a compiled knowledge base, not a retrieval pipeline — it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there is no vector DB to run: qmd keeps its BM25 and embedding index in one local SQLite file that scribe refreshes on every sync. Most lookups are plain-text BM25 matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front — the digest and the index — stay small enough to read whole."
       }
     },
     {
@@ -272,11 +272,17 @@
   "@context": "https://schema.org",
   "@type": "TechArticle",
   "headline": "scribe — the compiled, LLM-written knowledge base for AI coding sessions",
-  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your coding-agent sessions, git repos, and self-sent URLs into a curated, BM25-searchable wiki your agents read before they decide. Local-first and capable of running 100% on Ollama.",
+  "description": "scribe is the compiled, LLM-written knowledge base — the 'LLM Wiki' pattern as a single-binary CLI. Plain markdown in git, no vector DB, no RAG. It mines your coding-agent sessions, git repos, and self-sent URLs into a curated wiki, searchable by BM25 keyword and local vector search, that your agents read before they decide. Local-first and capable of running 100% on Ollama.",
   "url": "https://getscribe.dev/",
   "image": "https://getscribe.dev/og-v4.png",
   "datePublished": "2026-05-14T00:00:00+02:00",
-  "dateModified": "2026-10-01T00:00:00+02:00",
+  "dateModified": "2026-10-21T00:00:00+02:00",
+  "isBasedOn": {
+    "@type": "CreativeWork",
+    "name": "LLM Wiki",
+    "url": "https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f",
+    "author": { "@type": "Person", "name": "Andrej Karpathy" }
+  },
   "inLanguage": "en",
   "author": {
     "@type": "Person",
@@ -909,6 +915,8 @@
     max-width: 58ch;
   }
   .hero__sub strong { color: var(--fg); font-weight: 600; }
+  .hero__sub a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .hero__sub a:hover { color: var(--accent-hover); }
   .hero__cta {
     display: flex;
     flex-wrap: wrap;
@@ -2596,7 +2604,7 @@
           Your knowledge base, <span class="accent">written by your tools.</span>
         </h1>
         <p class="hero__sub">
-          <strong>scribe turns git history, coding-agent sessions, and saved links into a private markdown wiki your next agent reads before it acts.</strong> It runs across projects, on cron, and fully locally on Ollama for zero API spend.
+          <strong>scribe turns git history, coding-agent sessions, and saved links into a private markdown wiki your next agent reads before it acts.</strong> It implements the <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f">LLM Wiki pattern</a> Andrej Karpathy described, and runs across projects, on cron, and fully locally on Ollama for zero API spend.
         </p>
         <div class="hero__install">
           <span class="hero__install-sigil" aria-hidden="true">$</span>
@@ -2899,7 +2907,7 @@ advisory locks table-ambiguous under load.
     <header class="s__head">
       <div class="s__eyebrow">How it compares</div>
       <h2 class="s__title">Not RAG. Not Obsidian. Not another LLM-on-every-session burner.</h2>
-      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25, so there's nothing to embed and nothing to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, with a digest and index small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
+      <p class="s__sub"><strong>scribe is a compiled knowledge base, not a vector database</strong>: it auto-writes a curated markdown wiki your agents query with BM25 and local vector search, so there's no vector database to host. The "second brain" debate is about notes <em>you</em> read. scribe isn't that. It's memory your <em>agent</em> reads before it decides: the reasons behind a choice, not summaries you'll never reopen. It sits between manual-notes tools (Obsidian, Notion) and unbounded LLM-on-every-query approaches (vanilla RAG, claude-memory-compiler): a curated wiki on top of raw sources kept verbatim, with a digest and index small enough for an agent to read whole, and cheap to query because most lookups are plain-text matches, not vector guesses.</p>
       <p class="s__sub"><a href="/vs">Full comparison: scribe vs RAG, AnythingLLM, and a plain markdown vault →</a></p>
     </header>
 
@@ -3616,7 +3624,7 @@ scribe doctor <span class="flag">--section</span> localmode
 
       <details class="q">
         <summary>Is scribe an alternative to RAG for a personal knowledge base?</summary>
-        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there are no embeddings to maintain and no vector DB to run. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front &mdash; the digest and the index &mdash; stay small enough to read whole.</div>
+        <div class="answer">Yes. scribe is a <strong>compiled knowledge base, not a retrieval pipeline</strong>: it writes curated markdown articles into a git repo instead of chunking documents into a vector database, so there is no vector DB to run: qmd keeps its BM25 and embedding index in one local SQLite file that scribe refreshes on every sync. Most lookups are plain-text <strong>BM25</strong> matches, which is cheaper and more predictable than vector recall, and the parts an agent reads up front &mdash; the digest and the index &mdash; stay small enough to read whole.</div>
       </details>
 
       <details class="q">
