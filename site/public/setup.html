@@ -706,10 +706,10 @@ integrations:
     enabled: true</code></pre>
 <p>Give capture to exactly one machine. Messages is iCloud-synced, so
 every Mac on the same Apple ID sees identical messages; capturing on two
-double-ingests every URL and makes them fight over the committed
-<code>scripts/imessage-state.json</code>. The per-machine Full Disk
-Access grant is a useful forcing function — simply never run
-<code>scribe fda</code> on the second machine.</p>
+ingests a URL twice whenever both capture between pulls, and makes them
+fight over the committed <code>scripts/imessage-state.json</code>. The
+per-machine Full Disk Access grant is a useful forcing function — simply
+never run <code>scribe fda</code> on the second machine.</p>
 <p>Turning the flag on also activates the secret gate, which adds a
 whole-KB audit to <code>scribe doctor</code>. Pre-existing
 credential-shaped strings in old articles surface as a new warning; they

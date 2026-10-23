@@ -499,8 +499,9 @@ integrations:
 ```
 
 Give capture to exactly one machine. Messages is iCloud-synced, so every Mac on
-the same Apple ID sees identical messages; capturing on two double-ingests every
-URL and makes them fight over the committed `scripts/imessage-state.json`. The
+the same Apple ID sees identical messages; capturing on two ingests a URL twice
+whenever both capture between pulls, and makes them fight over the committed
+`scripts/imessage-state.json`. The
 per-machine Full Disk Access grant is a useful forcing function — simply never
 run `scribe fda` on the second machine.
 

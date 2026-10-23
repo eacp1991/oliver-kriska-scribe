@@ -934,8 +934,8 @@ repo config.** That is deliberate — they are personal sources, and a pushed
 `enabled: true` must not switch them on for every machine reading the repo. Move
 both blocks verbatim into the gitignored `scribe.local.yaml` of the one machine
 that should run them. Pick exactly one: Messages is iCloud-synced, so capturing
-on two Macs double-ingests every URL and makes them fight over
-`scripts/imessage-state.json`.
+on two Macs ingests a URL twice whenever both capture between pulls, and makes
+them fight over `scripts/imessage-state.json`.
 
 Full step-by-step, including onboarding the second machine and which scheduled
 jobs to throttle there, is in the
