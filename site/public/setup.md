@@ -222,11 +222,14 @@ What these steps do:
    allowed to read. It is interactive; an agent that cannot drive the prompt
    runs `scribe projects list --pending`, confirms the list with the human, then
    `scribe projects approve <name>…`.
-4. `sync --dry-run --estimate` prints a token estimate for the queued
-   raw-article work (contextualize and absorb) without writes or LLM calls. It
-   does not price project extraction or session mining; `scribe sync --dry-run`
-   on its own lists the projects and changed files a run would extract. A real
-   `scribe sync` can spend tokens; run it only after reviewing both.
+4. `sync --dry-run --estimate` prints a token estimate for the run without
+   writes or LLM calls: project extraction (up to `--max`, default 3),
+   session mining when you add `--sessions`, and the queued raw-article work
+   (contextualize and absorb). Extraction and mining are priced at this KB's
+   median per call from `output/costs/`, or a labeled default before there is
+   any history. `scribe sync --dry-run` on its own lists the projects and
+   changed files a run would extract. A real `scribe sync` can spend tokens;
+   run it only after reviewing both.
 5. `cron install` installs macOS LaunchAgents or prints Linux crontab entries.
 6. `doctor` checks dependencies, configuration, scheduling, qmd, and local
    Ollama health when selected. A new empty KB can have freshness warnings;
@@ -459,7 +462,8 @@ extracted a repository lists it through git — tracked and untracked files, wit
 `.gitignore` honored — then extracts it once at full model cost, because the
 never-extracted case is decided before the ledger is consulted. Run
 `scribe sync --dry-run` before the first real sync on a new machine to see that
-list; the `--estimate` token count does not include it.
+list. `--estimate` prices those extractions at the KB's median per call, which
+comes from incremental runs, so expect a first full pass to cost more.
 [Topologies](https://getscribe.dev/topologies.md) is the canonical reference for
 what is and is not coordinated.
 

@@ -835,7 +835,7 @@ scribe config diff  # team KBs: show sensitive scribe.yaml keys changed since la
 scribe config trust # team KBs: approve the current sensitive keys
 scribe config update # append commented docs for options added since your scribe.yaml was scaffolded
 scribe sync --sessions       # mine all ccrider providers + direct Codex rollouts (when codex.mine is on)
-scribe sync --dry-run --estimate  # token estimate for pending work (no writes or LLM calls)
+scribe sync --dry-run --estimate  # token estimate for pending extraction + absorb work; add --sessions to price mining (no writes or LLM calls)
 scribe sync --max-absorb N   # one-shot override of absorb.max_per_run from scribe.yaml
 scribe sync --max N          # max projects extracted per run (default 3; cron passes 2)
 scribe sync --discover       # discovery only (also: --reindex, --extract <project>, --force)

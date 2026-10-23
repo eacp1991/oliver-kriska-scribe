@@ -432,11 +432,15 @@ that cannot drive the prompt runs
 <code>scribe projects list --pending</code>, confirms the list with the
 human, then <code>scribe projects approve &lt;name&gt;…</code>.</li>
 <li><code>sync --dry-run --estimate</code> prints a token estimate for
-the queued raw-article work (contextualize and absorb) without writes or
-LLM calls. It does not price project extraction or session mining;
-<code>scribe sync --dry-run</code> on its own lists the projects and
-changed files a run would extract. A real <code>scribe sync</code> can
-spend tokens; run it only after reviewing both.</li>
+the run without writes or LLM calls: project extraction (up to
+<code>--max</code>, default 3), session mining when you add
+<code>--sessions</code>, and the queued raw-article work (contextualize
+and absorb). Extraction and mining are priced at this KB's median per
+call from <code>output/costs/</code>, or a labeled default before there
+is any history. <code>scribe sync --dry-run</code> on its own lists the
+projects and changed files a run would extract. A real
+<code>scribe sync</code> can spend tokens; run it only after reviewing
+both.</li>
 <li><code>cron install</code> installs macOS LaunchAgents or prints
 Linux crontab entries.</li>
 <li><code>doctor</code> checks dependencies, configuration, scheduling,
@@ -669,8 +673,9 @@ through git — tracked and untracked files, with <code>.gitignore</code>
 honored — then extracts it once at full model cost, because the
 never-extracted case is decided before the ledger is consulted. Run
 <code>scribe sync --dry-run</code> before the first real sync on a new
-machine to see that list; the <code>--estimate</code> token count does
-not include it. <a
+machine to see that list. <code>--estimate</code> prices those
+extractions at the KB's median per call, which comes from incremental
+runs, so expect a first full pass to cost more. <a
 href="https://getscribe.dev/topologies.md">Topologies</a> is the
 canonical reference for what is and is not coordinated.</p>
 <h3 id="step-1--prepare-the-kb-once-on-the-machine-that-has-it">Step 1 —

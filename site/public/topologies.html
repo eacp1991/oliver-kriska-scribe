@@ -338,8 +338,10 @@ even though a sibling machine already did that revision. That first pass
 asks git for tracked and untracked files with <code>.gitignore</code>
 honored, so ignored dependency trees do not inflate it. After that first
 pass the ledger takes over. <code>scribe sync --dry-run</code> lists
-what the first real run will extract; the <code>--estimate</code> token
-count covers only queued absorb work and does not include it.</p>
+what the first real run will extract. <code>--estimate</code> prices
+that run's extraction slots at the KB's median per call, which comes
+from incremental runs, so a first full pass costs more than it
+shows.</p>
 <h3 id="what-turning-it-on-takes-away">What turning it on takes
 away</h3>
 <p><code>team: true</code> hard-disables <strong>iMessage

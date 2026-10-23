@@ -67,8 +67,9 @@ at full model cost, even though a sibling machine already did that revision.
 That first pass asks git for tracked and untracked files with `.gitignore`
 honored, so ignored dependency trees do not inflate it. After that first pass
 the ledger takes over. `scribe sync --dry-run` lists what the first real run
-will extract; the `--estimate` token count covers only queued absorb work and
-does not include it.
+will extract. `--estimate` prices that run's extraction slots at the KB's
+median per call, which comes from incremental runs, so a first full pass costs
+more than it shows.
 
 ### What turning it on takes away
 

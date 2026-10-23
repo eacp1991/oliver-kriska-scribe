@@ -4,6 +4,18 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
 
 ## [Unreleased]
 
+### Added
+
+- **`sync --dry-run --estimate` prices project extraction and session
+  mining.** It used to cover only the contextualize and absorb queues, so
+  the most expensive phases of a run never showed up. Extraction now counts
+  the projects a run would pick (capped by `--max`), and `--sessions` counts
+  the sessions triage and the hook queue would admit, both read-only. Each
+  call is priced at the median of that op's successful calls in the KB's
+  cost ledger over the last 30 days, or at a default the row labels as one.
+  Ollama rows are marked free. When a daily output ceiling is set, the
+  estimate also prints today's headroom and warns if the run would hit it.
+
 ### Fixed
 
 - **Envelope-mode extraction sends the changed files again (#138).** The
