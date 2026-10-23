@@ -285,7 +285,7 @@ owner</a> and <a
 href="https://getscribe.dev/setup.md#team-member-clone-and-onboard">Team
 member</a> for a shared KB. The mechanics are identical; only who runs
 step 1 differs.</p>
-<p>Three guarantees switch on with <code>team: true</code>, and each
+<p>Four guarantees switch on with <code>team: true</code>, and each
 fails silently when it is missing:</p>
 <div class="table-scroll"><table>
 <thead>
@@ -336,10 +336,10 @@ ledger is consulted, so <strong>the first sync on a new machine
 re-extracts every approved repository once</strong>, at full model cost,
 even though a sibling machine already did that revision. That first pass
 asks git for tracked and untracked files with <code>.gitignore</code>
-honored, so ignored dependency trees do not inflate the estimate. After
-that first pass the ledger takes over. Preview it with
-<code>scribe sync --dry-run --estimate</code> before the first real
-run.</p>
+honored, so ignored dependency trees do not inflate it. After that first
+pass the ledger takes over. <code>scribe sync --dry-run</code> lists
+what the first real run will extract; the <code>--estimate</code> token
+count covers only queued absorb work and does not include it.</p>
 <h3 id="what-turning-it-on-takes-away">What turning it on takes
 away</h3>
 <p><code>team: true</code> hard-disables <strong>iMessage

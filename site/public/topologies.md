@@ -45,7 +45,7 @@ for a solo multi-device setup, or
 [Team member](https://getscribe.dev/setup.md#team-member-clone-and-onboard) for a
 shared KB. The mechanics are identical; only who runs step 1 differs.
 
-Three guarantees switch on with `team: true`, and each fails silently when it
+Four guarantees switch on with `team: true`, and each fails silently when it
 is missing:
 
 | Guarantee | Mechanism | Without it |
@@ -65,9 +65,10 @@ repository takes the never-extracted branch *before* the ledger is consulted, so
 **the first sync on a new machine re-extracts every approved repository once**,
 at full model cost, even though a sibling machine already did that revision.
 That first pass asks git for tracked and untracked files with `.gitignore`
-honored, so ignored dependency trees do not inflate the estimate. After that
-first pass the ledger takes over. Preview it with
-`scribe sync --dry-run --estimate` before the first real run.
+honored, so ignored dependency trees do not inflate it. After that first pass
+the ledger takes over. `scribe sync --dry-run` lists what the first real run
+will extract; the `--estimate` token count covers only queued absorb work and
+does not include it.
 
 ### What turning it on takes away
 

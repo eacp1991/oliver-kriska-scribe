@@ -23,9 +23,8 @@ The expensive half of the job was never deciding. It's rebuilding the context yo
 Three stages, one pipeline:
 
 1. **Capture** — four input streams, all on cron: git repos, coding-agent sessions, iMessage self-chat URLs, drop files.
-2. **Triage** — FTS5 keyword-density scoring rejects boilerplate session candidates before any LLM call. Cheap sessions cost nothing, so the inference bill scales with signal, not session count.
-3. **Extract + absorb** — sessions and project changes use bounded extraction envelopes; after each successful session mine, Go checkpoints its processed mark so the next run skips it. Raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.
-4. **Compile + index** — auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article. `qmd` reindexes, and the next agent session reads what scribe just wrote (`CLAUDE.md` / `AGENTS.md`).
+2. **Triage + extract** — FTS5 keyword-density scoring rejects boilerplate session candidates before any LLM call. Cheap sessions cost nothing, so the inference bill scales with signal, not session count. Sessions and project changes use bounded extraction envelopes; after each successful session mine, Go checkpoints its processed mark so the next run skips it. Raw articles and drop files use a two-pass absorb that grounds facts, then fans dense sources into entity-first wiki pages.
+3. **Compile + index** — auto-generated wikilinks, backlinks JSON, retrieval-context paragraphs spliced into every article. `qmd` reindexes, and the next agent session reads what scribe just wrote (`CLAUDE.md` / `AGENTS.md`).
 
 ## What makes scribe different
 
@@ -102,10 +101,10 @@ The trust boundary, concretely — what tries to cross into the shared KB and wh
 The mechanisms:
 
 - **Shared config is untrusted by default.** A trust layer pins the sensitive surface of a shared `scribe.yaml`: provider, model, ingest paths, and the secret scanner itself. A pushed change that would repoint inference to a new endpoint or drain a new directory into the KB reverts to the last trusted snapshot until a human approves it.
-- **Secrets never reach shared history.** scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off and the KB pushes to a private remote you own; `team: true` is what turns it on — and it is a multi-writer switch, not a headcount, so one person with two machines can set it.
-- **Extraction is paid for once, not per laptop.** Every `scribe sync` pulls, merges, and reindexes before it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync lists each approved repo through git — tracked and untracked files, with `.gitignore` honored — and extracts it once before the ledger takes over. Preview it with `scribe sync --dry-run --estimate`.
+- **Secrets never reach shared history.** scribe mines session transcripts, which routinely carry API keys and tokens. In team mode a deterministic secret scanner runs in the commit gate and holds flagged credentials back before anything lands in shared git history. No LLM, no network: a regex pass on the commit path. On a solo KB the gate is off by default and the KB pushes to a private remote you own; `team: true` turns it on (a solo KB can opt in with `secret_scan.enable: true`) — and `team: true` is a multi-writer switch, not a headcount, so one person with two machines can set it.
+- **Extraction is paid for once, not per laptop.** Every `scribe sync` pulls, merges, and reindexes before it extracts, and a committed ledger keeps two machines from mining the same git revision twice. Your inference bill scales with commits, not with the number of laptops pointed at the KB. One budgeted exception: a brand-new machine has no local extraction state, so its first sync lists each approved repo through git — tracked and untracked files, with `.gitignore` honored — and extracts it once before the ledger takes over. `scribe sync --dry-run` lists the repos and changed files it would extract; budget that first run separately, because the `--estimate` token count covers only the queued absorb work.
 - **A teammate's unrelated repo never leaks in.** Discovered projects start pending. `allowed_remotes` and source filters gate discovery by git-remote identity, and `scribe projects {list,approve,ignore,review}` controls what enters the pipeline, so a side project or a client checkout never lands in the shared KB without an approve.
-- **Curate privately, promote deliberately.** `scribe promote <article> --to team-kb` copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.
+- **Curate privately, promote deliberately.** `scribe promote <article> --to ~/team-kb` copies a page from your personal KB into the shared one, provenance recorded. Derived and coordination files are refused as sources, so the team KB fills with what you meant to publish, not your working scratch.
 - **One machine consolidates, no server.** The weekly Dream consolidation rewrites, merges, and prunes the whole wiki, so exactly one machine should run it. A committed leader lease in the repo elects that machine: no etcd, no lock server, and two laptops never race to rewrite the same wiki at 02:00 Sunday.
 
 ### Scribe for Teams — early access
@@ -209,11 +208,12 @@ qmd query "how did I solve the oban idempotency bug last quarter"
 scribe init --bind          # bootstrap a KB, wire the agent handshake
 scribe sync                 # discover → extract → absorb → reindex
 scribe sync --sessions      # mine coding-agent transcripts
-scribe sync --dry-run --estimate  # token estimate, no writes or LLM calls
-scribe doctor               # validate setup, cron, git remote, Ollama
+scribe sync --dry-run --estimate  # token estimate for queued absorb work, no writes or LLM calls
+scribe doctor               # validate deps, config, cron, run freshness, Ollama
 scribe commit               # stage + push the KB to your private remote
-scribe dream                # weekly consolidation (Ollama-driven)
-scribe capture              # drain queued URLs / iMessage links
+scribe dream                # weekly 4-phase consolidation
+scribe capture              # pull self-sent iMessage links (macOS)
+scribe ingest drain         # fetch queued URLs into raw/articles/
 scribe relations migrate    # classify `related:` into typed edges
 scribe cron install / uninstall / status
 ```
@@ -239,7 +239,7 @@ After `scribe init` + `scribe cron install`, five things happen on their own. Ne
 
 4. **Auto-publish — your private KB repo commits and pushes itself.** `scribe commit` runs hourly: stages every change, builds a structured commit message, and `git push`es to your origin (GitHub, Gitea, or Forgejo — no scribe-hosted backend). On non-fast-forward, it runs `git pull --rebase` and retries once; force-push is never attempted.
 
-5. **Weekly cleanup — Dream cycle prunes, merges, breaks down (100% Ollama).** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation (ORIENT → SIGNAL → CONSOLIDATE → PRUNE + INDEX). A Go orchestrator inlines the orient packet into one bounded prompt and parses one `EnvelopeV2` JSON document back — verified end-to-end on a 7,472-article KB in ~70s on `gemma3:12b`.
+5. **Weekly cleanup — Dream cycle prunes, merges, breaks down (Ollama-capable).** Sundays at 02:00, `scribe dream` runs a 4-phase consolidation (ORIENT → SIGNAL → CONSOLIDATE → PRUNE + INDEX). A Go orchestrator inlines the orient packet into one bounded prompt and parses one `EnvelopeV2` JSON document back — verified end-to-end on a 7,472-article KB in ~70s on `gemma3:12b`.
 
 The loop closes here: every absorb tick reindexes `qmd`; the next Claude Code, Codex, or Amp session finds whatever scribe just wrote — and if that session produces a new lesson, it writes a drop file, and the cycle repeats.
 
@@ -306,7 +306,7 @@ No — and that's the point. A second brain is notes *you* read, connect, and th
 No. Every LLM op in scribe — per-project extraction, absorb (contextualize, atomic facts, pass-2), dream, assess, deep, session-mine, relations migrate — runs end-to-end against a local Ollama server. There is no remaining `claude -p` callsite in a normal `scribe sync`. A single line in `scribe.yaml` flips the whole pipeline: `llm.provider: ollama`. Per-op overrides still work if you want to keep some passes on Anthropic or a hosted API.
 
 **What does it cost to run?**
-Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI-compatible API, a full week of work billed ~$0.55 (Together); on the Anthropic path the same week billed ~$103.57 ($104.12 across all three paths) — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed $1.16. Routing is per-op in `scribe.yaml`, so the bill follows what you point at a paid provider, not how many KBs you run, and the paths handled different volumes — read each as what it actually billed, not a like-for-like race. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview any run with `scribe sync --dry-run --estimate`; `scribe cost` reconciles every token to the cent across providers and KBs.
+Zero on the local-mode path (Ollama) for the entire pipeline. On a hosted OpenAI-compatible API, a full week of work billed ~$0.55 (Together); on the Anthropic path the same week billed ~$103.57 ($104.12 across all three paths) — but read the split before you budget: that was the team KB at $102.96, while the personal KB on the same machine billed $1.16. Routing is per-op in `scribe.yaml`, so the bill follows what you point at a paid provider, not how many KBs you run, and the paths handled different volumes — read each as what it actually billed, not a like-for-like race. The triage pre-filter and density scoring never call an LLM, so most session-mining work is free regardless of backend. Preview the queued absorb work with `scribe sync --dry-run --estimate` (it doesn't price project extraction or session mining); `scribe cost` reconciles every token to the cent across providers and KBs.
 
 **Can a team share one KB safely?**
 Yes. A small team points every machine at one git-backed KB. A trust layer treats shared `scribe.yaml` as untrusted by default (config that repoints inference or widens ingest paths reverts until approved); a deterministic secret-scan gate holds credentials back before they hit shared git history; `allowed_remotes` keeps a teammate's unrelated or client repo out; `scribe promote` moves curated pages over with provenance; and a committed leader lease elects the single machine that runs the weekly consolidation — no server, no etcd.
@@ -348,4 +348,4 @@ Yes to both. The knowledge base is indexed by `qmd` for BM25 keyword search and 
 
 **License:** MIT
 **Source:** <https://github.com/oliver-kriska/scribe>
-**Last updated:** 2026-10-21
+**Last updated:** 2026-10-23
