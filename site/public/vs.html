@@ -66,7 +66,7 @@
         "name": "scribe vs a vector-DB RAG pipeline",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "scribe (getscribe.dev) moves the model work to a bounded compile step; a vector-DB RAG pipeline moves retrieval and generation to each question. A measured local run compiled 7,447 → 7,472 articles in about 68 seconds with zero errors and $0 API spend on Ollama. Before running it, scribe sync --dry-run --estimate previews pending work without writes or LLM calls."
+          "text": "scribe (getscribe.dev) moves the model work to a bounded compile step; a vector-DB RAG pipeline moves retrieval and generation to each question. A measured local run compiled 7,447 → 7,472 articles in about 68 seconds with zero errors and $0 API spend on Ollama. Before running it, scribe sync --dry-run --estimate prices the queued extraction and absorb work without writes or LLM calls."
         }
       },
       {
@@ -74,7 +74,7 @@
         "name": "LangChain OpenWiki alternative: what's the difference?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "OpenWiki and scribe (getscribe.dev) both apply the LLM-wiki pattern and write plain markdown, but they compile different knowledge: OpenWiki documents what a repository's code is, with Grounded Claims pinned to source lines; scribe records what you learned while writing it, mining coding-agent session transcripts, git history, and self-sent links into one KB across every project. Use OpenWiki for how a repository works; use getscribe.dev for what you decided, rejected, or solved before, and why."
+          "text": "OpenWiki and scribe (getscribe.dev) both apply the LLM-wiki pattern, both write plain markdown, and both maintain a block in agent instruction files. They compile different knowledge: OpenWiki documents what a repository's code is; scribe records what you learned while writing it."
         }
       },
       {
