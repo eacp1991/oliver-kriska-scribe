@@ -19,6 +19,11 @@ All notable changes to scribe are documented here. Format follows [Keep a Change
   `.git` entry, and the tools-mode extract and assess prompts say so too.
   The tooling half of #131 (whether `.claude/agents`, `rules`, `skills`
   count as project knowledge) is left open.
+- **`init --path` no longer scaffolds over a team clone.** The existing-KB
+  guard looked only for `scripts/projects.json`, which team KBs gitignore,
+  so `scribe init --path <fresh clone>` rewrote the committed `scribe.yaml`,
+  `CLAUDE.md`, `.gitignore` and `log.md`. An existing `scribe.yaml` now
+  refuses too; `--force` still overrides.
 
 ## [0.5.10] — 2026-10-15
 
